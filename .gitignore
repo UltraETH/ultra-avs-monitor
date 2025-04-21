@@ -49,3 +49,8 @@ coverage/
 !.vscode/launch.json
 !.vscode/extensions.json
 *.code-workspace
+
+
+# Added by cargo
+
+/target

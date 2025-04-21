@@ -1,0 +1,10 @@
+{
+    "recommendations": [
+        "tamasfe.even-better-toml",
+        "matthewnespor.vscode-color-identifiers-mode",
+        "editorconfig.editorconfig",
+        "rust-lang.rust-analyzer",
+        "matteobigoi.bacon-ls-vscode",
+        "swellaby.vscode-rust-test-adapter"
+    ]
+}
