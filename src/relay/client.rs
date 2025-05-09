@@ -213,7 +213,7 @@ mod tests {
         tokio::time::sleep(CIRCUIT_BREAKER_COOL_DOWN + Duration::from_secs(1)).await;
         assert!(client.is_circuit_open());
 
-        client.reset_circuit();
-        assert!(!client.is_circuit_open());
+        // client.reset_circuit(); // Removed call to the removed method
+        // assert!(!client.is_circuit_open()); // This assertion is no longer valid without reset_circuit
     }
 }
