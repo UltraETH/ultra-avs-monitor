@@ -12,6 +12,10 @@ path = "src/lib.rs"
 name = "avs_boost_monitor"
 path = "src/main.rs"
 
+[[bin]]
+name = "hex_to_decimal_converter"
+path = "src/bin/hex_to_decimal_converter.rs"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "rt-multi-thread", "macros"] }
 httpmock = "0.7.0"

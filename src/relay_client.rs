@@ -3,11 +3,8 @@ use reqwest::Client;
 
 use crate::types::BidTrace;
 
-// A single relay client instance.
 pub struct RelayClient {
-    // Relay Url.
     url: String,
-    // Reqwest client to do the requests.
     client: Client,
 }
 

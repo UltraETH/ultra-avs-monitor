@@ -21,7 +21,7 @@ pub struct RelayClient {
     failed_requests: u32,
     success_count: u32, // Added for monitoring/future use
     circuit_breaker_threshold: u32,
-    last_attempt_time: Instant, // Added for circuit breaker cool-down
+    last_attempt_time: Instant,
 }
 
 impl RelayClient {
@@ -59,35 +59,22 @@ impl RelayClient {
         }
     }
 
-    // Checks if the circuit is open or in a half-open state
     pub fn is_circuit_open(&self) -> bool {
         if self.failed_requests >= self.circuit_breaker_threshold {
-            // Circuit is open, check if it's time to attempt a half-open request
             self.last_attempt_time.elapsed() > CIRCUIT_BREAKER_COOL_DOWN
         } else {
-            // Circuit is closed
             false
         }
     }
 
-    // Resets the circuit breaker state
-    fn reset_circuit(&mut self) {
-        self.failed_requests = 0;
-        self.success_count = 0; // Reset success count on circuit reset
-        self.last_attempt_time = Instant::now();
-        debug!(url = %self.base_url, "Circuit breaker reset");
-    }
-
-    // Increments failed requests and updates last attempt time
     fn record_failure(&mut self) {
         self.failed_requests += 1;
         self.last_attempt_time = Instant::now();
         warn!(url = %self.base_url, failed_requests = self.failed_requests, threshold = self.circuit_breaker_threshold, "Relay request failed");
     }
 
-    // Resets failed requests and increments success count on success
     fn record_success(&mut self) {
-        self.failed_requests = 0; // Reset failures on success
+        self.failed_requests = 0;
         self.success_count += 1;
         self.last_attempt_time = Instant::now();
         debug!(url = %self.base_url, "Relay request successful");
@@ -192,7 +179,6 @@ impl RelayService for RelayClient {
         self.failed_requests
     }
 
-    // Implement the trait method by calling the existing struct method
     fn is_circuit_open(&self) -> bool {
         self.is_circuit_open()
     }
@@ -217,17 +203,15 @@ mod tests {
         assert!(!client.is_circuit_open());
 
         client.failed_requests = 1;
-        assert!(!client.is_circuit_open()); // Not open yet
+        assert!(!client.is_circuit_open());
 
         client.failed_requests = 2;
-        // Circuit is open, but not enough time has passed for half-open attempt
         assert!(client.failed_requests >= client.circuit_breaker_threshold);
         assert!(client.last_attempt_time.elapsed() <= CIRCUIT_BREAKER_COOL_DOWN);
-        assert!(!client.is_circuit_open()); // Still considered closed by the method logic
+        assert!(!client.is_circuit_open());
 
-        // Simulate time passing
         tokio::time::sleep(CIRCUIT_BREAKER_COOL_DOWN + Duration::from_secs(1)).await;
-        assert!(client.is_circuit_open()); // Now it's time for a half-open attempt
+        assert!(client.is_circuit_open());
 
         client.reset_circuit();
         assert!(!client.is_circuit_open());

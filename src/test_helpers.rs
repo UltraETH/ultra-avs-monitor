@@ -19,7 +19,6 @@ impl TestServer {
     }
 
     pub async fn shutdown(&self) -> Result<()> {
-        // Clean up resources
         let _ = self.bid_manager.clear_all().await;
         Ok(())
     }

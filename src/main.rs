@@ -9,7 +9,7 @@ use tokio::{
     signal,
     sync::{broadcast, Mutex},
     time,
-}; // Added broadcast
+};
 use tracing::{debug, error, info, instrument, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -119,15 +119,14 @@ async fn main() -> Result<()> {
     }
 
     let relay_clients = RelayClients::with_configs(config.relays.clone());
-    let relay_clients_arc = Arc::new(Mutex::new(relay_clients)); // Wrap RelayClients in Arc<Mutex>
+    let relay_clients_arc = Arc::new(Mutex::new(relay_clients));
 
-    // Set bid manager on the wrapped RelayClients
     {
         let mut clients = relay_clients_arc.lock().await;
         clients.bid_manager = bid_manager.clone();
     }
 
-    let relay_wrapper = RelayClientWrapper::new(relay_clients_arc.clone()); // Pass the Arc<Mutex> clone to wrapper
+    let relay_wrapper = RelayClientWrapper::new(relay_clients_arc.clone());
 
     let websocket_server = WebSocketServer::new(config.server.clone());
     let websocket_sender = websocket_server.bid_sender();
@@ -156,18 +155,16 @@ async fn main() -> Result<()> {
     let shutdown = signal::ctrl_c();
     tokio::pin!(shutdown);
 
-    // Create a broadcast channel for shutdown signals
     let (shutdown_tx, _) = broadcast::channel(1);
 
     info!("Service started successfully, press Ctrl+C to stop");
 
-    // Spawn task for relay metrics reporting
     if config.output.metrics_enabled {
-        let metrics_relay_clients_arc = relay_clients_arc.clone(); // Clone for metrics task
-        let mut metrics_shutdown_rx = shutdown_tx.subscribe(); // Subscribe to shutdown signals
+        let metrics_relay_clients_arc = relay_clients_arc.clone();
+        let mut metrics_shutdown_rx = shutdown_tx.subscribe();
         tokio::spawn(async move {
-            let mut metrics_interval = time::interval(Duration::from_secs(10)); // Report metrics every 10 seconds
-            metrics_interval.tick().await; // Initial tick
+            let mut metrics_interval = time::interval(Duration::from_secs(10));
+            metrics_interval.tick().await;
 
             loop {
                 tokio::select! {
@@ -180,9 +177,9 @@ async fn main() -> Result<()> {
                             metrics::gauge!("relay_failed_total", "url" => url).set(failed as f64);
                         }
                     }
-                    _ = metrics_shutdown_rx.recv() => { // Listen for shutdown signal
+                    _ = metrics_shutdown_rx.recv() => {
                         info!("Relay metrics task received shutdown signal, stopping...");
-                        break; // Exit loop on shutdown signal
+                        break;
                     }
                 }
             }
@@ -192,9 +189,8 @@ async fn main() -> Result<()> {
 
     loop {
         tokio::select! {
-                _ = shutdown.as_mut() => { // Use shutdown.as_mut() to get a mutable reference
+                _ = shutdown.as_mut() => {
                     info!("Shutdown signal received, stopping service...");
-                    // Send shutdown signal to other tasks
                     let _ = shutdown_tx.send(());
                     websocket_server.shutdown().await;
                     break;
@@ -214,7 +210,6 @@ async fn main() -> Result<()> {
 
                                 let block_for_relay = U64::from(latest_u64);
 
-                                // Poll for bids using the relay_wrapper
                                 if let Err(e) = relay_wrapper.poll_for(
                                     block_for_relay,
                                     config.polling.interval.as_secs(),
