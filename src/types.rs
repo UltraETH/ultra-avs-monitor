@@ -7,9 +7,6 @@ use alloy_primitives::{Address, U256};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::str::FromStr;
 
-// No imports needed for proptest since we're not using it
-
-// Custom serialization for Address
 mod address_serde {
     use super::*;
 

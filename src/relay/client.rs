@@ -9,8 +9,8 @@ use crate::config::RelayConfig;
 use super::RelayService;
 
 pub struct RelayClient {
-    base_url: String, // Store the original base URL
-    url: String,      // Store the full request path
+    base_url: String,
+    url: String,
     client: Client,
     request_timeout: Duration,
     failed_requests: u32,
@@ -19,21 +19,21 @@ pub struct RelayClient {
 
 impl RelayClient {
     pub fn new(config: RelayConfig) -> Self {
-        let base_url = config.url.clone(); // Store base URL
+        let base_url = config.url.clone();
         Self {
             base_url,
-            url: format!("{}/relay/v1/data/bidtraces/builder_blocks_received", config.url), // Construct full URL
+            url: format!("{}/relay/v1/data/bidtraces/builder_blocks_received", config.url),
             client: Client::new(),
             request_timeout: config.request_timeout,
             failed_requests: 0,
             circuit_breaker_threshold: config.circuit_breaker_threshold,
         }
     }
-    
+
     pub fn new_with_url(base_url: String, request_timeout: Duration) -> Self {
-        let full_url = format!("{}/relay/v1/data/bidtraces/builder_blocks_received", base_url); // Construct full URL
+        let full_url = format!("{}/relay/v1/data/bidtraces/builder_blocks_received", base_url);
         Self {
-            base_url, // Store base URL
+            base_url,
             url: full_url,
             client: Client::new(),
             request_timeout,
@@ -41,12 +41,11 @@ impl RelayClient {
             circuit_breaker_threshold: 3,
         }
     }
-    
+
     pub fn is_circuit_open(&self) -> bool {
         self.failed_requests >= self.circuit_breaker_threshold
     }
-    
-    // Resets the circuit breaker counter
+
     #[allow(dead_code)]
     fn reset_circuit(&mut self) {
         self.failed_requests = 0;
@@ -55,7 +54,6 @@ impl RelayClient {
 
 #[async_trait::async_trait]
 impl RelayService for RelayClient {
-    // Correct implementation using the stored base_url
     fn get_url(&self) -> &str {
         &self.base_url
     }
@@ -66,10 +64,9 @@ impl RelayService for RelayClient {
                 "Circuit breaker open, skipping request".to_string()
             ));
         }
-        
+
         let request_url = format!("{}?block_number={}", &self.url, block_num);
-        
-        // Use timeout to prevent hanging requests
+
         let response = match timeout(
             self.request_timeout,
             self.client
@@ -96,7 +93,6 @@ impl RelayService for RelayClient {
             ));
         }
 
-        // Parse response body as JSON
         let bid_traces = match response.json::<Vec<BidTrace>>().await {
             Ok(data) => data,
             Err(e) => {
@@ -115,7 +111,7 @@ mod tests {
     use super::*;
     use crate::config::RelayConfig;
     use std::time::Duration;
-    
+
     #[tokio::test]
     async fn test_circuit_breaker() {
         let config = RelayConfig {
@@ -123,16 +119,15 @@ mod tests {
             request_timeout: Duration::from_millis(100),
             circuit_breaker_threshold: 2,
         };
-        
+
         let client = RelayClient::new(config);
-        
+
         assert!(!client.is_circuit_open());
-        
-        // Manual testing of circuit breaker logic - in a real test we'd mock the HTTP calls
+
         let mut client = client;
         client.failed_requests = 2;
         assert!(client.is_circuit_open());
-        
+
         client.reset_circuit();
         assert!(!client.is_circuit_open());
     }

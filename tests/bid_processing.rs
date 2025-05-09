@@ -1,5 +1,5 @@
 use test_log::test;
-use avs_boost_monitor::test_helpers::TestServer;
+use ultra_avs_monitor::test_helpers::TestServer;
 use alloy_primitives::{Address, U256};
 
 #[test(tokio::test)]
@@ -7,13 +7,13 @@ async fn test_add_bid() {
     // Create a test server with a BidManager
     let test_server = TestServer::new().await;
     let bid_manager = test_server.get_bid_manager();
-    
+
     // Test empty state
     let highest_bid = bid_manager.get_highest_bid().await;
     assert!(highest_bid.is_none());
-    
+
     // Create a test bid
-    let bid1 = avs_boost_monitor::types::BidTrace {
+    let bid1 = ultra_avs_monitor::types::BidTrace {
         slot: U256::from(1000u64),
         block_number: U256::from(1000u64),
         parent_hash: "0x123456".to_string(),
@@ -28,15 +28,15 @@ async fn test_add_bid() {
         timestamp_ms: U256::from(1617979455000u64),
         value: U256::from(1000u64),
     };
-    
+
     // Add bid and check it becomes the highest
     bid_manager.add_bids(vec![bid1.clone()]).await;
     let highest_bid = bid_manager.get_highest_bid().await;
     assert!(highest_bid.is_some());
     assert_eq!(highest_bid.unwrap().value, U256::from(1000u64));
-    
+
     // Add higher bid
-    let bid2 = avs_boost_monitor::types::BidTrace {
+    let bid2 = ultra_avs_monitor::types::BidTrace {
         slot: U256::from(1000u64),
         block_number: U256::from(1000u64),
         parent_hash: "0x123456".to_string(),
@@ -51,12 +51,12 @@ async fn test_add_bid() {
         timestamp_ms: U256::from(1617979456000u64),
         value: U256::from(2000u64),
     };
-    
+
     bid_manager.add_bids(vec![bid2.clone()]).await;
     let highest_bid = bid_manager.get_highest_bid().await;
     assert!(highest_bid.is_some());
     assert_eq!(highest_bid.unwrap().value, U256::from(2000u64));
-    
+
     // Clean up
     let _ = test_server.shutdown().await;
 }
@@ -66,9 +66,9 @@ async fn test_bid_uniqueness() {
     // Create a test server with a BidManager
     let test_server = TestServer::new().await;
     let bid_manager = test_server.get_bid_manager();
-    
+
     // Create a bid
-    let bid = avs_boost_monitor::types::BidTrace {
+    let bid = ultra_avs_monitor::types::BidTrace {
         slot: U256::from(1000u64),
         block_number: U256::from(1000u64),
         parent_hash: "0x123456".to_string(),
@@ -83,17 +83,17 @@ async fn test_bid_uniqueness() {
         timestamp_ms: U256::from(1617979455000u64),
         value: U256::from(1000u64),
     };
-    
+
     // Add first bid
     bid_manager.add_bids(vec![bid.clone()]).await;
     let all_bids = bid_manager.get_bids().await;
     assert_eq!(all_bids.len(), 1);
-    
+
     // Add duplicate bid
     bid_manager.add_bids(vec![bid.clone()]).await;
     let all_bids = bid_manager.get_bids().await;
     assert_eq!(all_bids.len(), 1, "Duplicate bid should not be added");
-    
+
     // Clean up
     let _ = test_server.shutdown().await;
 }

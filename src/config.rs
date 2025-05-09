@@ -49,13 +49,13 @@ impl Default for Config {
 pub struct ServerConfig {
     #[serde(default = "default_websocket_port")]
     pub websocket_port: u16,
-    
+
     #[serde(default = "default_websocket_address")]
     pub websocket_address: IpAddr,
-    
+
     #[serde(default = "default_max_connections")]
     pub max_connections: usize,
-    
+
     #[serde(default = "default_connection_timeout")]
     pub connection_timeout_secs: u64,
 }
@@ -74,10 +74,10 @@ impl Default for ServerConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct RelayConfig {
     pub url: String,
-    
+
     #[serde(with = "humantime_serde", default = "default_request_timeout")]
     pub request_timeout: Duration,
-    
+
     #[serde(default = "default_circuit_breaker_threshold")]
     pub circuit_breaker_threshold: u32,
 }
@@ -86,10 +86,10 @@ pub struct RelayConfig {
 pub struct PollingConfig {
     #[serde(with = "humantime_serde", default = "default_poll_interval")]
     pub interval: Duration,
-    
+
     #[serde(with = "humantime_serde", default = "default_poll_duration")]
     pub duration: Duration,
-    
+
     #[serde(default = "default_rpc_url")]
     pub ethereum_rpc_url: String,
 }
@@ -98,22 +98,22 @@ pub struct PollingConfig {
 pub struct OutputConfig {
     #[serde(default = "default_output_enabled")]
     pub file_output_enabled: bool,
-    
+
     #[serde(default = "default_output_path")]
     pub file_output_path: String,
-    
+
     #[serde(default = "default_batch_size")]
     pub batch_size: usize,
-    
+
     #[serde(with = "humantime_serde", default = "default_flush_interval")]
     pub flush_interval: Duration,
-    
+
     #[serde(default = "default_metrics_enabled")]
     pub metrics_enabled: bool,
-    
+
     #[serde(default = "default_metrics_port")]
     pub metrics_port: u16,
-    
+
     #[serde(default = "default_metrics_host")]
     pub metrics_host: String,
 }
@@ -210,7 +210,7 @@ impl Config {
     pub fn get_websocket_addr(&self) -> SocketAddr {
         SocketAddr::new(self.server.websocket_address, self.server.websocket_port)
     }
-    
+
     pub fn get_metrics_addr(&self) -> SocketAddr {
         let host = IpAddr::from_str(&self.output.metrics_host).unwrap_or_else(|_| {
             eprintln!("Invalid metrics host IP, using default 0.0.0.0");
@@ -218,30 +218,30 @@ impl Config {
         });
         SocketAddr::new(host, self.output.metrics_port)
     }
-    
+
     pub fn from_file(path: PathBuf) -> Result<Self> {
         let config_str = std::fs::read_to_string(path)
             .map_err(|e| BoostMonitorError::ConfigError(format!("Failed to read config file: {}", e)))?;
-            
+
         let config: Config = serde_json::from_str(&config_str)
             .map_err(|e| BoostMonitorError::ConfigError(format!("Failed to parse config: {}", e)))?;
-            
+
         Ok(config)
     }
-    
+
     pub fn from_env() -> Result<Self> {
         let mut config = Config::default();
-        
+
         if let Ok(port_str) = std::env::var("WEBSOCKET_PORT") {
             if let Ok(port) = port_str.parse::<u16>() {
                 config.server.websocket_port = port;
             }
         }
-        
+
         if let Ok(rpc_url) = std::env::var("ETHEREUM_RPC_URL") {
             config.polling.ethereum_rpc_url = rpc_url;
         }
-        
+
         if let Ok(relays) = std::env::var("RELAY_URLS") {
             config.relays = relays
                 .split(',')
@@ -252,17 +252,17 @@ impl Config {
                 })
                 .collect();
         }
-        
+
         if let Ok(output_path) = std::env::var("FILE_OUTPUT_PATH") {
             config.output.file_output_path = output_path;
         }
-        
+
         if let Ok(metrics_port_str) = std::env::var("METRICS_PORT") {
             if let Ok(port) = metrics_port_str.parse::<u16>() {
                 config.output.metrics_port = port;
             }
         }
-        
+
         Ok(config)
     }
 }

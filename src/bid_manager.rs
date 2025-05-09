@@ -12,7 +12,6 @@ use tokio::sync::{
 use crate::types::BidTrace;
 use crate::errors::Result;
 
-// Manages (sort, organize) all bids given by relays
 #[derive(Clone)]
 pub struct BidManager {
     highest_bid: Arc<RwLock<Option<BidTrace>>>,
@@ -20,7 +19,6 @@ pub struct BidManager {
     unique_bids: Arc<RwLock<HashSet<BidTrace>>>,
     top_bid_subscribers: Arc<RwLock<Vec<Sender<BidTrace>>>>,
     new_bid_subscribers: Arc<RwLock<Vec<Sender<BidTrace>>>>,
-    // WebSocket sender for streaming bids
     websocket_sender: Arc<RwLock<Option<Sender<BidTrace>>>>,
 }
 
@@ -36,7 +34,6 @@ impl BidManager {
         }
     }
 
-    // Set WebSocket sender for streaming bids
     pub async fn set_websocket_sender(&self, sender: Sender<BidTrace>) {
         let mut websocket_sender = self.websocket_sender.write().await;
         *websocket_sender = Some(sender);
@@ -47,7 +44,6 @@ impl BidManager {
             return;
         }
 
-        // Acquire all locks at once to prevent deadlocks
         let mut all_bids_guard = self.all_bids.write().await;
         let mut highest_bid_guard = self.highest_bid.write().await;
         let mut unique_bids_guard = self.unique_bids.write().await;
@@ -55,31 +51,25 @@ impl BidManager {
         let new_bid_subscribers_guard = self.new_bid_subscribers.read().await;
         let websocket_sender_guard = self.websocket_sender.read().await;
 
-        // Track if we have a new highest bid
         let mut highest_changed = false;
         let mut highest_bid_value = highest_bid_guard.as_ref().map(|b| b.value).unwrap_or_default();
         let mut new_highest_bid = None;
 
         for bid in new_bids {
-            // Skip if we've already seen this bid
             if !unique_bids_guard.insert(bid.clone()) {
                 continue;
             }
-            
-            // Add to sorted heap
+
             all_bids_guard.push(Reverse(bid.clone()));
-            
-            // Send to new bid subscribers
+
             for subscriber in &*new_bid_subscribers_guard {
-                let _ = subscriber.try_send(bid.clone()); // Non-blocking send
+                let _ = subscriber.try_send(bid.clone());
             }
-            
-            // Send to WebSocket clients
+
             if let Some(sender) = &*websocket_sender_guard {
-                let _ = sender.try_send(bid.clone()); // Non-blocking send
+                let _ = sender.try_send(bid.clone());
             }
-            
-            // Check if this is a new highest bid
+
             if bid.value > highest_bid_value {
                 highest_bid_value = bid.value;
                 new_highest_bid = Some(bid.clone());
@@ -87,14 +77,12 @@ impl BidManager {
             }
         }
 
-        // Update highest bid if changed
         if highest_changed && new_highest_bid.is_some() {
             *highest_bid_guard = new_highest_bid.clone();
-            
-            // Notify highest bid subscribers
+
             if let Some(highest_bid) = new_highest_bid {
                 for subscriber in &*top_bid_subscribers_guard {
-                    let _ = subscriber.try_send(highest_bid.clone()); // Non-blocking send
+                    let _ = subscriber.try_send(highest_bid.clone());
                 }
             }
         }
@@ -118,11 +106,10 @@ impl BidManager {
         all_bids_guard.clear();
         unique_bids_guard.clear();
         *highest_bid_guard = None;
-        
+
         Ok(())
     }
 
-    // Subscribe to new top block bids
     pub async fn subscribe_to_top_bids(&self) -> Receiver<BidTrace> {
         let (tx, rx) = mpsc::channel(100);
         let mut subscribers_guard = self.top_bid_subscribers.write().await;
@@ -130,7 +117,6 @@ impl BidManager {
         rx
     }
 
-    // Subscribe to all new block bids
     pub async fn subscribe_to_all_new_bids(&self) -> Receiver<BidTrace> {
         let (tx, rx) = mpsc::channel(100);
         let mut subscribers_guard = self.new_bid_subscribers.write().await;

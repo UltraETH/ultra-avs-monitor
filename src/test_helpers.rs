@@ -29,7 +29,6 @@ impl TestServer {
     }
 }
 
-/// Helper function to create a test BidTrace with specified values
 #[cfg(test)]
 pub fn create_test_bid_trace(slot: u64, value: u64) -> BidTrace {
     BidTrace {
