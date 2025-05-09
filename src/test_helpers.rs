@@ -1,20 +1,20 @@
-use std::sync::Arc;
 use crate::bid_manager::BidManager;
 use crate::errors::Result;
+use std::sync::Arc;
 
-#[cfg(test)]
-use alloy_primitives::{Address, U256};
 #[cfg(test)]
 use crate::types::BidTrace;
+#[cfg(test)]
+use alloy_primitives::{Address, U256};
 
 pub struct TestServer {
-    pub bid_manager: Arc<BidManager>
+    pub bid_manager: Arc<BidManager>,
 }
 
 impl TestServer {
     pub async fn new() -> Self {
         Self {
-            bid_manager: Arc::new(BidManager::new())
+            bid_manager: Arc::new(BidManager::new()),
         }
     }
 

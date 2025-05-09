@@ -1,6 +1,6 @@
+use alloy_primitives::{Address, U256};
 use test_log::test;
 use ultra_avs_monitor::test_helpers::TestServer;
-use alloy_primitives::{Address, U256};
 
 #[test(tokio::test)]
 async fn test_add_bid() {

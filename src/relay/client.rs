@@ -1,13 +1,13 @@
-use std::time::{Duration, Instant};
-use tokio::time::{timeout, sleep};
 use alloy_primitives::U64;
 use reqwest::Client;
-use tracing::{warn, error, debug};
+use std::time::{Duration, Instant};
+use tokio::time::{sleep, timeout};
+use tracing::{debug, error, warn};
 
+use super::RelayService;
+use crate::config::RelayConfig;
 use crate::errors::{BoostMonitorError, Result};
 use crate::types::BidTrace;
-use crate::config::RelayConfig;
-use super::RelayService;
 
 const MAX_RETRIES: u32 = 3;
 const RETRY_DELAY: Duration = Duration::from_millis(500);
@@ -29,7 +29,10 @@ impl RelayClient {
         let base_url = config.url.clone();
         Self {
             base_url,
-            url: format!("{}/relay/v1/data/bidtraces/builder_blocks_received", config.url),
+            url: format!(
+                "{}/relay/v1/data/bidtraces/builder_blocks_received",
+                config.url
+            ),
             client: Client::new(),
             request_timeout: config.request_timeout,
             failed_requests: 0,
@@ -40,7 +43,10 @@ impl RelayClient {
     }
 
     pub fn new_with_url(base_url: String, request_timeout: Duration) -> Self {
-        let full_url = format!("{}/relay/v1/data/bidtraces/builder_blocks_received", base_url);
+        let full_url = format!(
+            "{}/relay/v1/data/bidtraces/builder_blocks_received",
+            base_url
+        );
         Self {
             base_url,
             url: full_url,
@@ -96,10 +102,12 @@ impl RelayService for RelayClient {
 
     async fn get_builder_bids(&mut self, block_num: U64) -> Result<Vec<BidTrace>> {
         // Check circuit breaker state
-        if self.failed_requests >= self.circuit_breaker_threshold && self.last_attempt_time.elapsed() <= CIRCUIT_BREAKER_COOL_DOWN {
-             debug!(url = %self.base_url, "Circuit breaker open, skipping request");
+        if self.failed_requests >= self.circuit_breaker_threshold
+            && self.last_attempt_time.elapsed() <= CIRCUIT_BREAKER_COOL_DOWN
+        {
+            debug!(url = %self.base_url, "Circuit breaker open, skipping request");
             return Err(BoostMonitorError::RelayConnectionError(
-                "Circuit breaker open, skipping request".to_string()
+                "Circuit breaker open, skipping request".to_string(),
             ));
         }
 
@@ -114,8 +122,9 @@ impl RelayService for RelayClient {
                 self.client
                     .get(&request_url)
                     .header("accept", "application/json")
-                    .send()
-            ).await;
+                    .send(),
+            )
+            .await;
 
             match response_result {
                 Ok(Ok(response)) => {
@@ -129,31 +138,33 @@ impl RelayService for RelayClient {
                                 error!(url = %self.base_url, block = %block_num, error = %e, "Failed to parse JSON response");
                                 self.record_failure();
                                 if attempt == MAX_RETRIES {
-                                    return Err(BoostMonitorError::InvalidResponseError(
-                                        format!("Failed to parse JSON response after {} attempts: {}", MAX_RETRIES, e)
-                                    ));
+                                    return Err(BoostMonitorError::InvalidResponseError(format!(
+                                        "Failed to parse JSON response after {} attempts: {}",
+                                        MAX_RETRIES, e
+                                    )));
                                 }
                             }
                         }
                     } else {
                         let status = response.status();
                         let body = response.text().await.unwrap_or_else(|_| "N/A".to_string());
-                         error!(url = %self.base_url, block = %block_num, status = %status, body = %body, "Relay returned non-success status");
+                        error!(url = %self.base_url, block = %block_num, status = %status, body = %body, "Relay returned non-success status");
                         self.record_failure();
                         if attempt == MAX_RETRIES {
-                            return Err(BoostMonitorError::RelayConnectionError(
-                                format!("Relay returned status {} after {} attempts: {}", status, MAX_RETRIES, body)
-                            ));
+                            return Err(BoostMonitorError::RelayConnectionError(format!(
+                                "Relay returned status {} after {} attempts: {}",
+                                status, MAX_RETRIES, body
+                            )));
                         }
                     }
-                },
+                }
                 Ok(Err(e)) => {
                     error!(url = %self.base_url, block = %block_num, error = %e, "Relay request failed");
                     self.record_failure();
                     if attempt == MAX_RETRIES {
                         return Err(BoostMonitorError::RequestError(e));
                     }
-                },
+                }
                 Err(_) => {
                     error!(url = %self.base_url, block = %block_num, timeout = ?self.request_timeout, "Relay request timed out");
                     self.record_failure();

@@ -220,11 +220,13 @@ impl Config {
     }
 
     pub fn from_file(path: PathBuf) -> Result<Self> {
-        let config_str = std::fs::read_to_string(path)
-            .map_err(|e| BoostMonitorError::ConfigError(format!("Failed to read config file: {}", e)))?;
+        let config_str = std::fs::read_to_string(path).map_err(|e| {
+            BoostMonitorError::ConfigError(format!("Failed to read config file: {}", e))
+        })?;
 
-        let config: Config = serde_json::from_str(&config_str)
-            .map_err(|e| BoostMonitorError::ConfigError(format!("Failed to parse config: {}", e)))?;
+        let config: Config = serde_json::from_str(&config_str).map_err(|e| {
+            BoostMonitorError::ConfigError(format!("Failed to parse config: {}", e))
+        })?;
 
         Ok(config)
     }

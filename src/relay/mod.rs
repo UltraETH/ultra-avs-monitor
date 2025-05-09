@@ -1,5 +1,5 @@
-use crate::types::BidTrace;
 use crate::errors::Result;
+use crate::types::BidTrace;
 use alloy_primitives::U64;
 use async_trait::async_trait;
 

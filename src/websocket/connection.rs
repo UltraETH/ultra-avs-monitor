@@ -1,13 +1,13 @@
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::net::TcpStream;
 use tokio::sync::{Mutex, Notify};
 use tokio_tungstenite::{tungstenite::protocol::Message, WebSocketStream};
-use tokio::net::TcpStream;
-use tracing::{info, error, debug};
+use tracing::{debug, error, info};
 
+use crate::errors::{BoostMonitorError, Result};
 use crate::types::BidTrace;
-use crate::errors::{Result, BoostMonitorError};
 
 pub struct Connection {
     stream: Arc<Mutex<WebSocketStream<TcpStream>>>,
@@ -28,8 +28,8 @@ impl Connection {
         let mut stream = self.stream.lock().await;
 
         // Serialize bid to JSON for sending
-        let message = serde_json::to_string(bid)
-            .map_err(|e| BoostMonitorError::SerializationError(e))?;
+        let message =
+            serde_json::to_string(bid).map_err(|e| BoostMonitorError::SerializationError(e))?;
 
         stream
             .send(Message::Text(message.into()))

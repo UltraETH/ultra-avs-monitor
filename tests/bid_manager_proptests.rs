@@ -1,8 +1,8 @@
 #![cfg(test)]
 
+use alloy_primitives::{Address, U256};
 use ultra_avs_monitor::bid_manager::BidManager;
 use ultra_avs_monitor::types::BidTrace;
-use alloy_primitives::{Address, U256};
 
 // Helper to create test bids
 fn create_test_bid(value: u64, block_num: u64) -> BidTrace {
@@ -85,18 +85,42 @@ async fn test_clear_all() {
     bid_manager.add_bids(bids).await;
 
     // Verify bids are there for specific blocks
-    assert_eq!(bid_manager.get_bids_for_block(U256::from(100)).await.len(), 1);
-    assert_eq!(bid_manager.get_bids_for_block(U256::from(101)).await.len(), 1);
-    assert!(bid_manager.get_highest_bid_for_block(U256::from(100)).await.is_some());
-    assert!(bid_manager.get_highest_bid_for_block(U256::from(101)).await.is_some());
+    assert_eq!(
+        bid_manager.get_bids_for_block(U256::from(100)).await.len(),
+        1
+    );
+    assert_eq!(
+        bid_manager.get_bids_for_block(U256::from(101)).await.len(),
+        1
+    );
+    assert!(bid_manager
+        .get_highest_bid_for_block(U256::from(100))
+        .await
+        .is_some());
+    assert!(bid_manager
+        .get_highest_bid_for_block(U256::from(101))
+        .await
+        .is_some());
 
     // Clear all bids
     let clear_result = bid_manager.clear_all().await;
     assert!(clear_result.is_ok());
 
     // Verify bids are gone for specific blocks
-    assert!(bid_manager.get_bids_for_block(U256::from(100)).await.is_empty());
-    assert!(bid_manager.get_bids_for_block(U256::from(101)).await.is_empty());
-    assert!(bid_manager.get_highest_bid_for_block(U256::from(100)).await.is_none());
-    assert!(bid_manager.get_highest_bid_for_block(U256::from(101)).await.is_none());
+    assert!(bid_manager
+        .get_bids_for_block(U256::from(100))
+        .await
+        .is_empty());
+    assert!(bid_manager
+        .get_bids_for_block(U256::from(101))
+        .await
+        .is_empty());
+    assert!(bid_manager
+        .get_highest_bid_for_block(U256::from(100))
+        .await
+        .is_none());
+    assert!(bid_manager
+        .get_highest_bid_for_block(U256::from(101))
+        .await
+        .is_none());
 }

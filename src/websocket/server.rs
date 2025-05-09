@@ -1,15 +1,19 @@
 use std::sync::Arc;
-use std::{net::SocketAddr, collections::HashMap, time::{Duration, Instant}};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    time::{Duration, Instant},
+};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, RwLock, Mutex, Notify};
+use tokio::sync::{mpsc, Mutex, Notify, RwLock};
 use tokio_tungstenite::accept_async;
-use uuid::Uuid;
-use tracing::{info, error, warn, debug}; // Added tracing imports
+use tracing::{debug, error, info, warn};
+use uuid::Uuid; // Added tracing imports
 
-use crate::types::BidTrace;
-use crate::errors::{Result, BoostMonitorError};
-use crate::config::ServerConfig;
 use super::connection::Connection;
+use crate::config::ServerConfig;
+use crate::errors::{BoostMonitorError, Result};
+use crate::types::BidTrace;
 
 pub struct WebSocketServer {
     connections: Arc<RwLock<HashMap<String, Arc<Connection>>>>,
@@ -42,9 +46,9 @@ impl WebSocketServer {
         let server = Arc::new(self.clone());
 
         // Set up the TCP listener
-        let listener = TcpListener::bind(&addr)
-            .await
-            .map_err(|e| BoostMonitorError::WebSocketServerError(format!("Failed to bind to address: {}", e)))?;
+        let listener = TcpListener::bind(&addr).await.map_err(|e| {
+            BoostMonitorError::WebSocketServerError(format!("Failed to bind to address: {}", e))
+        })?;
 
         println!("WebSocket server listening on: {}", addr);
 
@@ -152,9 +156,12 @@ impl WebSocketServer {
         stream: TcpStream,
         addr: SocketAddr, // Keep addr for logging
     ) -> Result<()> {
-        let ws_stream = accept_async(stream)
-            .await
-            .map_err(|e| BoostMonitorError::WebSocketServerError(format!("Error during WebSocket handshake: {}", e)))?;
+        let ws_stream = accept_async(stream).await.map_err(|e| {
+            BoostMonitorError::WebSocketServerError(format!(
+                "Error during WebSocket handshake: {}",
+                e
+            ))
+        })?;
 
         let connection_id = Uuid::new_v4().to_string();
         // Pass the server's shutdown signal to the new Connection
@@ -178,7 +185,6 @@ impl WebSocketServer {
             info!(connection_id = %connection_id, address = %addr, "Connection closed or task finished, removed from map");
         }
 
-
         Ok(())
     }
 
@@ -193,7 +199,10 @@ impl WebSocketServer {
         let mut connections = self.connections.write().await;
         let count = connections.len();
         if count > 0 {
-            warn!("Forcing close of {} remaining connections during shutdown", count);
+            warn!(
+                "Forcing close of {} remaining connections during shutdown",
+                count
+            );
             for conn in connections.values() {
                 let _ = conn.close().await; // Attempt to send close frame
             }

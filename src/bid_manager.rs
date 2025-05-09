@@ -3,15 +3,15 @@ use std::{
     sync::Arc,
 };
 
+use alloy_primitives::U256; // Ensure U256 is imported and U64 is not
 use tokio::sync::{
     mpsc::{self, Receiver, Sender},
     RwLock,
 };
-use alloy_primitives::U256; // Ensure U256 is imported and U64 is not
-use tracing::{info, debug};
+use tracing::{debug, info};
 
-use crate::types::BidTrace;
 use crate::errors::Result;
+use crate::types::BidTrace;
 
 #[derive(Clone)]
 pub struct BidManager {
@@ -63,7 +63,9 @@ impl BidManager {
             let block_number: U256 = bid.block_number; // Explicitly U256
 
             // Get or insert the HashSet for this block number
-            let block_bids = all_bids_guard.entry(block_number).or_insert_with(HashSet::new);
+            let block_bids = all_bids_guard
+                .entry(block_number)
+                .or_insert_with(HashSet::new);
 
             // Insert the bid into the HashSet. If it's new, proceed.
             if block_bids.insert(bid.clone()) {

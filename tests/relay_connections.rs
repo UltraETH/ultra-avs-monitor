@@ -1,5 +1,5 @@
+use alloy_primitives::{Address, U256};
 use ultra_avs_monitor::test_helpers::TestServer;
-use alloy_primitives::{U256, Address};
 
 #[tokio::test]
 async fn test_bid_processing_flow() {
@@ -7,7 +7,10 @@ async fn test_bid_processing_flow() {
     let bid_manager = test_server.get_bid_manager();
 
     let block_num_1000 = U256::from(1000u64);
-    assert!(bid_manager.get_bids_for_block(block_num_1000).await.is_empty());
+    assert!(bid_manager
+        .get_bids_for_block(block_num_1000)
+        .await
+        .is_empty());
 
     let bid = ultra_avs_monitor::types::BidTrace {
         slot: U256::from(1000u64),
@@ -39,7 +42,10 @@ async fn test_clearing_bids() {
     let bid_manager = test_server.get_bid_manager();
 
     let block_num_1000 = U256::from(1000u64);
-    assert!(bid_manager.get_bids_for_block(block_num_1000).await.is_empty());
+    assert!(bid_manager
+        .get_bids_for_block(block_num_1000)
+        .await
+        .is_empty());
 
     let bid = ultra_avs_monitor::types::BidTrace {
         slot: U256::from(1000u64),
@@ -58,10 +64,16 @@ async fn test_clearing_bids() {
     };
 
     bid_manager.add_bids(vec![bid.clone()]).await;
-    assert_eq!(bid_manager.get_bids_for_block(block_num_1000).await.len(), 1);
+    assert_eq!(
+        bid_manager.get_bids_for_block(block_num_1000).await.len(),
+        1
+    );
 
     let _ = bid_manager.clear_all().await;
-    assert!(bid_manager.get_bids_for_block(block_num_1000).await.is_empty());
+    assert!(bid_manager
+        .get_bids_for_block(block_num_1000)
+        .await
+        .is_empty());
 
     let _ = test_server.shutdown().await;
 }
@@ -106,7 +118,10 @@ async fn test_processing_multiple_bids() {
     bid_manager.add_bids(vec![bid1.clone(), bid2.clone()]).await;
 
     let block_num_1000 = U256::from(1000u64);
-    assert_eq!(bid_manager.get_bids_for_block(block_num_1000).await.len(), 2);
+    assert_eq!(
+        bid_manager.get_bids_for_block(block_num_1000).await.len(),
+        2
+    );
 
     let highest = bid_manager.get_highest_bid_for_block(block_num_1000).await;
     assert!(highest.is_some());

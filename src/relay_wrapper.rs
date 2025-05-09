@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use alloy_primitives::U64;
-use tokio::sync::Mutex; // Import Mutex
-use crate::relay_clients::RelayClients;
-use crate::errors::Result;
 use crate::bid_manager::BidManager;
+use crate::errors::Result;
+use crate::relay_clients::RelayClients;
+use alloy_primitives::U64;
+use std::sync::Arc;
+use tokio::sync::Mutex; // Import Mutex
 
 pub struct RelayClientWrapper {
     inner: Arc<Mutex<RelayClients>>, // Wrapped in Arc<Mutex>
@@ -12,7 +12,9 @@ pub struct RelayClientWrapper {
 impl RelayClientWrapper {
     // Constructor now accepts Arc<Mutex<RelayClients>>
     pub fn new(relay_clients: Arc<Mutex<RelayClients>>) -> Self {
-        Self { inner: relay_clients }
+        Self {
+            inner: relay_clients,
+        }
     }
 
     // Returns a clone of the Arc<Mutex<RelayClients>> for sharing
@@ -31,9 +33,16 @@ impl RelayClientWrapper {
     }
 
     // Polls for bids using the inner RelayClients, acquiring the lock
-    pub async fn poll_for(&self, block_num: U64, interval_secs: u64, duration_secs: u64) -> Result<()> {
+    pub async fn poll_for(
+        &self,
+        block_num: U64,
+        interval_secs: u64,
+        duration_secs: u64,
+    ) -> Result<()> {
         let mut inner = self.inner.lock().await;
-        inner.poll_for(block_num, interval_secs, duration_secs).await
+        inner
+            .poll_for(block_num, interval_secs, duration_secs)
+            .await
     }
 }
 

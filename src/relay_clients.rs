@@ -1,15 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
 use alloy_primitives::U64;
-use tokio::{select, time, sync::Mutex};
-use tracing::{error, debug, instrument};
+use tokio::{select, sync::Mutex, time};
+use tracing::{debug, error, instrument};
 
 use crate::{
-    bid_manager::BidManager,
-    config::RelayConfig,
+    bid_manager::BidManager, config::RelayConfig, errors::Result, relay::client::RelayClient,
     relay::RelayService,
-    relay::client::RelayClient,
-    errors::Result,
 };
 
 pub struct RelayClients {
@@ -28,7 +25,8 @@ impl RelayClients {
                         request_timeout: Duration::from_secs(5),
                         circuit_breaker_threshold: 3,
                     };
-                    Arc::new(Mutex::new(RelayClient::new(config))) as Arc<Mutex<dyn RelayService + Send + Sync>>
+                    Arc::new(Mutex::new(RelayClient::new(config)))
+                        as Arc<Mutex<dyn RelayService + Send + Sync>>
                 })
                 .collect(),
             bid_manager: Arc::new(BidManager::new()),
@@ -40,7 +38,8 @@ impl RelayClients {
             clients: configs
                 .into_iter()
                 .map(|config| {
-                    Arc::new(Mutex::new(RelayClient::new(config))) as Arc<Mutex<dyn RelayService + Send + Sync>>
+                    Arc::new(Mutex::new(RelayClient::new(config)))
+                        as Arc<Mutex<dyn RelayService + Send + Sync>>
                 })
                 .collect(),
             bid_manager: Arc::new(BidManager::new()),
@@ -48,7 +47,12 @@ impl RelayClients {
     }
 
     #[instrument(skip(self), fields(block = %block_num, interval = ?poll_interval_secs, duration = ?poll_for_secs))]
-    pub async fn poll_for(&mut self, block_num: U64, poll_interval_secs: u64, poll_for_secs: u64) -> Result<()> {
+    pub async fn poll_for(
+        &mut self,
+        block_num: U64,
+        poll_interval_secs: u64,
+        poll_for_secs: u64,
+    ) -> Result<()> {
         let poll_interval = Duration::from_secs(poll_interval_secs);
         let mut interval_timer = time::interval(poll_interval);
         let start_time = time::Instant::now();
