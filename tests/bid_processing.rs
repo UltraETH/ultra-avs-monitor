@@ -9,7 +9,8 @@ async fn test_add_bid() {
     let bid_manager = test_server.get_bid_manager();
 
     // Test empty state
-    let highest_bid = bid_manager.get_highest_bid().await;
+    let block_num_1000 = U256::from(1000u64);
+    let highest_bid = bid_manager.get_highest_bid_for_block(block_num_1000).await;
     assert!(highest_bid.is_none());
 
     // Create a test bid
@@ -31,7 +32,7 @@ async fn test_add_bid() {
 
     // Add bid and check it becomes the highest
     bid_manager.add_bids(vec![bid1.clone()]).await;
-    let highest_bid = bid_manager.get_highest_bid().await;
+    let highest_bid = bid_manager.get_highest_bid_for_block(block_num_1000).await;
     assert!(highest_bid.is_some());
     assert_eq!(highest_bid.unwrap().value, U256::from(1000u64));
 
@@ -53,7 +54,7 @@ async fn test_add_bid() {
     };
 
     bid_manager.add_bids(vec![bid2.clone()]).await;
-    let highest_bid = bid_manager.get_highest_bid().await;
+    let highest_bid = bid_manager.get_highest_bid_for_block(block_num_1000).await;
     assert!(highest_bid.is_some());
     assert_eq!(highest_bid.unwrap().value, U256::from(2000u64));
 
@@ -85,13 +86,14 @@ async fn test_bid_uniqueness() {
     };
 
     // Add first bid
+    let block_num_1000 = U256::from(1000u64);
     bid_manager.add_bids(vec![bid.clone()]).await;
-    let all_bids = bid_manager.get_bids().await;
+    let all_bids = bid_manager.get_bids_for_block(block_num_1000).await;
     assert_eq!(all_bids.len(), 1);
 
     // Add duplicate bid
     bid_manager.add_bids(vec![bid.clone()]).await;
-    let all_bids = bid_manager.get_bids().await;
+    let all_bids = bid_manager.get_bids_for_block(block_num_1000).await;
     assert_eq!(all_bids.len(), 1, "Duplicate bid should not be added");
 
     // Clean up

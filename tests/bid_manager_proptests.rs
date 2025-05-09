@@ -37,8 +37,8 @@ async fn test_highest_bid_is_correct() {
     // Add bids to manager
     bid_manager.add_bids(bids.clone()).await;
 
-    // Check highest bid
-    let highest_bid = bid_manager.get_highest_bid().await;
+    // Check highest bid for block 101
+    let highest_bid = bid_manager.get_highest_bid_for_block(U256::from(101)).await;
 
     // The highest bid should be bid2 (value 2000)
     assert!(highest_bid.is_some());
@@ -59,14 +59,16 @@ async fn test_all_unique_bids_stored() {
     // Add bids to manager
     bid_manager.add_bids(bids.clone()).await;
 
-    // Get all bids
-    let all_bids = bid_manager.get_bids().await;
+    // Get bids for each block
+    let bids_100 = bid_manager.get_bids_for_block(U256::from(100)).await;
+    let bids_101 = bid_manager.get_bids_for_block(U256::from(101)).await;
 
-    // Should contain 2 unique bids
-    assert_eq!(all_bids.len(), 2);
+    // Should contain 1 unique bid for block 100 and 1 for block 101
+    assert_eq!(bids_100.len(), 1);
+    assert_eq!(bids_101.len(), 1);
 
-    // Highest bid should be bid2
-    let highest_bid = bid_manager.get_highest_bid().await;
+    // Highest bid should be bid2 (for block 101)
+    let highest_bid = bid_manager.get_highest_bid_for_block(U256::from(101)).await;
     assert!(highest_bid.is_some());
     assert_eq!(highest_bid.as_ref().unwrap().value, U256::from(2000u64));
 }
@@ -82,15 +84,19 @@ async fn test_clear_all() {
     let bids = vec![bid1.clone(), bid2.clone()];
     bid_manager.add_bids(bids).await;
 
-    // Verify bids are there
-    assert_eq!(bid_manager.get_bids().await.len(), 2);
-    assert!(bid_manager.get_highest_bid().await.is_some());
+    // Verify bids are there for specific blocks
+    assert_eq!(bid_manager.get_bids_for_block(U256::from(100)).await.len(), 1);
+    assert_eq!(bid_manager.get_bids_for_block(U256::from(101)).await.len(), 1);
+    assert!(bid_manager.get_highest_bid_for_block(U256::from(100)).await.is_some());
+    assert!(bid_manager.get_highest_bid_for_block(U256::from(101)).await.is_some());
 
     // Clear all bids
     let clear_result = bid_manager.clear_all().await;
     assert!(clear_result.is_ok());
 
-    // Verify bids are gone
-    assert!(bid_manager.get_bids().await.is_empty());
-    assert!(bid_manager.get_highest_bid().await.is_none());
+    // Verify bids are gone for specific blocks
+    assert!(bid_manager.get_bids_for_block(U256::from(100)).await.is_empty());
+    assert!(bid_manager.get_bids_for_block(U256::from(101)).await.is_empty());
+    assert!(bid_manager.get_highest_bid_for_block(U256::from(100)).await.is_none());
+    assert!(bid_manager.get_highest_bid_for_block(U256::from(101)).await.is_none());
 }

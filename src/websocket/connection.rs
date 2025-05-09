@@ -1,9 +1,10 @@
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use tokio_tungstenite::{tungstenite::protocol::Message, WebSocketStream};
 use tokio::net::TcpStream;
+use tracing::{info, error, debug};
 
 use crate::types::BidTrace;
 use crate::errors::{Result, BoostMonitorError};
@@ -11,13 +12,15 @@ use crate::errors::{Result, BoostMonitorError};
 pub struct Connection {
     stream: Arc<Mutex<WebSocketStream<TcpStream>>>,
     last_activity: Arc<Mutex<Instant>>,
+    shutdown_signal: Arc<Notify>, // Added shutdown signal
 }
 
 impl Connection {
-    pub fn new(stream: WebSocketStream<TcpStream>) -> Self {
+    pub fn new(stream: WebSocketStream<TcpStream>, shutdown_signal: Arc<Notify>) -> Self {
         Self {
             stream: Arc::new(Mutex::new(stream)),
             last_activity: Arc::new(Mutex::new(Instant::now())),
+            shutdown_signal, // Store the shutdown signal
         }
     }
 
@@ -43,32 +46,61 @@ impl Connection {
     pub async fn listen(&self) {
         let stream_clone = self.stream.clone();
         let last_activity_clone = self.last_activity.clone();
+        let shutdown_signal_clone = self.shutdown_signal.clone(); // Clone signal for the task
 
         // Spawn a task to handle incoming messages
         tokio::spawn(async move {
             let mut stream = stream_clone.lock().await;
+            // No explicit pin here for now, select! should handle it if syntax is correct.
 
-            while let Some(result) = stream.next().await {
-                // Update last activity on any message received
-                let mut last_activity = last_activity_clone.lock().await;
-                *last_activity = Instant::now();
+            loop {
+                tokio::select! {
+                    // Listen for incoming messages
+                    // The `select!` macro awaits `stream.next()`, and `maybe_result` gets the Option<Result<Message, Error>>
+                    maybe_result = stream.next() => {
+                        match maybe_result {
+                            Some(Ok(msg)) => {
+                                // Update last activity on any message received
+                                let mut last_activity = last_activity_clone.lock().await;
+                                *last_activity = Instant::now();
 
-                match result {
-                    Ok(msg) => {
-                        if msg.is_close() {
-                            println!("Client sent close frame");
-                            break;
+                                if msg.is_close() {
+                                    info!("Client sent close frame");
+                                    // Optionally send a close frame back
+                                    // Need to handle potential error from send if stream is already closing
+                                    if let Err(e) = stream.send(Message::Close(None)).await {
+                                        debug!("Error sending close frame back to client: {}", e);
+                                    }
+                                    break; // Exit loop on close frame
+                                }
+                                // Handle other client messages here if needed in the future
+                                // Based on user feedback, client-to-server messages are deferred.
+                                debug!("Received message from client: {:?}", msg); // Log received message for now
+                            }
+                            Some(Err(e)) => {
+                                error!("Error receiving message: {}", e);
+                                break; // Exit loop on error
+                            }
+                            None => {
+                                info!("Client stream closed");
+                                break; // Exit loop when stream is closed
+                            }
                         }
-                        // Handle client messages if needed
                     }
-                    Err(e) => {
-                        eprintln!("Error receiving message: {}", e);
-                        break;
+                    // Listen for server shutdown signal
+                    _ = shutdown_signal_clone.notified() => {
+                        info!("Connection received shutdown signal, closing");
+                        // Attempt to send a close frame to the client
+                        // Need to handle potential error from send if stream is already closing
+                        if let Err(e) = stream.send(Message::Close(None)).await {
+                            debug!("Error sending close frame on shutdown: {}", e);
+                        }
+                        break; // Exit loop on shutdown signal
                     }
                 }
             }
 
-            println!("Client disconnected");
+            info!("Connection task finished");
         });
     }
 

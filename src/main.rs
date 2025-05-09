@@ -1,6 +1,6 @@
-use std::{net::SocketAddr, sync::Arc, path::Path};
+use std::{net::SocketAddr, sync::Arc, path::Path, time::Duration};
 use clap::Parser;
-use tokio::signal;
+use tokio::{signal, sync::{Mutex, broadcast}, time}; // Added broadcast
 use metrics;
 use metrics_exporter_prometheus::PrometheusBuilder;
 use tracing::{info, warn, error, debug, instrument};
@@ -117,52 +117,17 @@ async fn main() -> Result<()> {
         });
     }
 
-    if config.output.metrics_enabled {
-        let metrics_addr = config.get_metrics_addr();
-        setup_metrics_server(metrics_addr).await?;
+    let relay_clients = RelayClients::with_configs(config.relays.clone());
+    let relay_clients_arc = Arc::new(Mutex::new(relay_clients)); // Wrap RelayClients in Arc<Mutex>
 
-        let mut top_bid_subscription = bid_manager.subscribe_to_top_bids().await;
-
-        tokio::spawn(async move {
-            while let Some(bid) = top_bid_subscription.recv().await {
-                let block_number = bid.block_number.to_string();
-
-                match bid.value.to_string().parse::<f64>() {
-                    Ok(value_f64) => {
-                        let key = format!("highest_bid_value_block_{}", block_number);
-                        metrics::gauge!(key).set(value_f64);
-                    }
-                    Err(_) => {
-                        warn!(value = %bid.value, "Failed to parse bid value for metrics");
-                    }
-                }
-
-                match bid.gas_used.to_string().parse::<f64>() {
-                    Ok(gas_used_f64) => {
-                        let key = format!("highest_bid_gas_used_block_{}", block_number);
-                        metrics::gauge!(key).set(gas_used_f64);
-                    }
-                    Err(_) => {
-                        warn!(gas_used = %bid.gas_used, "Failed to parse bid gas_used for metrics");
-                    }
-                }
-
-                match bid.num_tx.to_string().parse::<f64>() {
-                    Ok(num_tx_f64) => {
-                        let key = format!("highest_bid_num_tx_block_{}", block_number);
-                        metrics::gauge!(key).set(num_tx_f64);
-                    }
-                    Err(_) => {
-                        warn!(num_tx = %bid.num_tx, "Failed to parse bid num_tx for metrics");
-                    }
-                }
-            }
-        });
+    // Set bid manager on the wrapped RelayClients
+    {
+        let mut clients = relay_clients_arc.lock().await;
+        clients.bid_manager = bid_manager.clone();
     }
 
-    let mut relay_clients = RelayClients::with_configs(config.relays.clone());
-    relay_clients.bid_manager = bid_manager.clone();
-    let mut relay_wrapper = RelayClientWrapper::new(relay_clients);
+
+    let relay_wrapper = RelayClientWrapper::new(relay_clients_arc.clone()); // Pass the Arc<Mutex> clone to wrapper
 
     let websocket_server = WebSocketServer::new(config.server.clone());
     let websocket_sender = websocket_server.bid_sender();
@@ -192,12 +157,47 @@ async fn main() -> Result<()> {
     let shutdown = signal::ctrl_c();
     tokio::pin!(shutdown);
 
+    // Create a broadcast channel for shutdown signals
+    let (shutdown_tx, _) = broadcast::channel(1);
+
     info!("Service started successfully, press Ctrl+C to stop");
+
+    // Spawn task for relay metrics reporting
+    if config.output.metrics_enabled {
+        let metrics_relay_clients_arc = relay_clients_arc.clone(); // Clone for metrics task
+        let mut metrics_shutdown_rx = shutdown_tx.subscribe(); // Subscribe to shutdown signals
+        tokio::spawn(async move {
+            let mut metrics_interval = time::interval(Duration::from_secs(10)); // Report metrics every 10 seconds
+            metrics_interval.tick().await; // Initial tick
+
+            loop {
+                tokio::select! {
+                    _ = metrics_interval.tick() => {
+                        let relay_clients = metrics_relay_clients_arc.lock().await;
+                        let metrics_data = relay_clients.get_client_metrics().await;
+
+                        for (url, success, failed) in metrics_data {
+                            metrics::gauge!("relay_success_total", "url" => url.clone()).set(success as f64);
+                            metrics::gauge!("relay_failed_total", "url" => url).set(failed as f64);
+                        }
+                    }
+                    _ = metrics_shutdown_rx.recv() => { // Listen for shutdown signal
+                        info!("Relay metrics task received shutdown signal, stopping...");
+                        break; // Exit loop on shutdown signal
+                    }
+                }
+            }
+            info!("Relay metrics task stopped.");
+        });
+    }
+
 
     loop {
         tokio::select! {
-            _ = &mut shutdown => {
+            _ = shutdown.as_mut() => { // Use shutdown.as_mut() to get a mutable reference
                 info!("Shutdown signal received, stopping service...");
+                // Send shutdown signal to other tasks
+                let _ = shutdown_tx.send(());
                 websocket_server.shutdown().await;
                 break;
             }
@@ -216,6 +216,7 @@ async fn main() -> Result<()> {
 
                             let block_for_relay = U64::from(latest_u64);
 
+                            // Poll for bids using the relay_wrapper
                             if let Err(e) = relay_wrapper.poll_for(
                                 block_for_relay,
                                 config.polling.interval.as_secs(),

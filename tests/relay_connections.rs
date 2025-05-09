@@ -6,7 +6,8 @@ async fn test_bid_processing_flow() {
     let test_server = TestServer::new().await;
     let bid_manager = test_server.get_bid_manager();
 
-    assert!(bid_manager.get_bids().await.is_empty());
+    let block_num_1000 = U256::from(1000u64);
+    assert!(bid_manager.get_bids_for_block(block_num_1000).await.is_empty());
 
     let bid = ultra_avs_monitor::types::BidTrace {
         slot: U256::from(1000u64),
@@ -26,7 +27,7 @@ async fn test_bid_processing_flow() {
 
     bid_manager.add_bids(vec![bid.clone()]).await;
 
-    let all_bids = bid_manager.get_bids().await;
+    let all_bids = bid_manager.get_bids_for_block(block_num_1000).await;
     assert_eq!(all_bids.len(), 1);
 
     let _ = test_server.shutdown().await;
@@ -37,7 +38,8 @@ async fn test_clearing_bids() {
     let test_server = TestServer::new().await;
     let bid_manager = test_server.get_bid_manager();
 
-    assert!(bid_manager.get_bids().await.is_empty());
+    let block_num_1000 = U256::from(1000u64);
+    assert!(bid_manager.get_bids_for_block(block_num_1000).await.is_empty());
 
     let bid = ultra_avs_monitor::types::BidTrace {
         slot: U256::from(1000u64),
@@ -56,10 +58,10 @@ async fn test_clearing_bids() {
     };
 
     bid_manager.add_bids(vec![bid.clone()]).await;
-    assert_eq!(bid_manager.get_bids().await.len(), 1);
+    assert_eq!(bid_manager.get_bids_for_block(block_num_1000).await.len(), 1);
 
     let _ = bid_manager.clear_all().await;
-    assert!(bid_manager.get_bids().await.is_empty());
+    assert!(bid_manager.get_bids_for_block(block_num_1000).await.is_empty());
 
     let _ = test_server.shutdown().await;
 }
@@ -103,9 +105,10 @@ async fn test_processing_multiple_bids() {
 
     bid_manager.add_bids(vec![bid1.clone(), bid2.clone()]).await;
 
-    assert_eq!(bid_manager.get_bids().await.len(), 2);
+    let block_num_1000 = U256::from(1000u64);
+    assert_eq!(bid_manager.get_bids_for_block(block_num_1000).await.len(), 2);
 
-    let highest = bid_manager.get_highest_bid().await;
+    let highest = bid_manager.get_highest_bid_for_block(block_num_1000).await;
     assert!(highest.is_some());
     assert_eq!(highest.unwrap().value, U256::from(2000u64));
 
