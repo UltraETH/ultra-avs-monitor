@@ -183,7 +183,7 @@ async fn main() -> Result<()> {
     let eth_rpc_url = config.polling.ethereum_rpc_url.parse()?;
 
     let provider = ProviderBuilder::new()
-        .on_client(RpcClient::new_http(eth_rpc_url));
+        .connect_client(RpcClient::new_http(eth_rpc_url));
 
     let mut interval = tokio::time::interval(config.polling.interval);
 

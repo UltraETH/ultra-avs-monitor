@@ -17,32 +17,32 @@ tokio = { version = "1", features = ["full", "rt-multi-thread", "macros"] }
 httpmock = "0.7.0"
 test-log = "0.2.0"
 proptest = { version = "1.4.0" } # Enable tokio feature
-proptest-derive = "0.4.0"
+proptest-derive = "0.5.1"
 
 [dependencies]
-url = "2.5.0" # Add url crate for parsing in main.rs/errors.rs
-thiserror = "1.0"
+url = "2.5.0"
+thiserror = "2.0.12"
 humantime-serde = "1.1"
 async-trait = "0.1"
 clap = { version = "4.3", features = ["derive"] } # Keep version 4.3, seems specific
 tempfile = "3.8"
-reqwest = { version = "0.11", features = ["json", "stream"] }
+reqwest = { version = "0.12.15", features = ["json", "stream"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-alloy-primitives = "0.7"
-alloy-rpc-types = "0.7"
-alloy-provider = "0.1" # Add provider
-alloy-rpc-client = "0.1.0" # Keep existing version
-alloy-transport-http = "0.1.0" # Keep existing version
+alloy-primitives = "1.1.0"
+alloy-rpc-types = "0.15.10"
+alloy-provider = "0.15.10" # Add provider
+alloy-rpc-client = "0.15.10"
+alloy-transport-http = "0.15.10"
 futures = "0.3.29"
 tokio-stream = "0.1.14"
-tokio-tungstenite = "0.21.0"
+tokio-tungstenite = "0.26.2"
 futures-util = "0.3.30"
 uuid = { version = "1.6.1", features = ["v4"] }
-metrics = "0.22"
-metrics-exporter-prometheus = "0.13"
-axum = "0.7"
+metrics = "0.24.2"
+metrics-exporter-prometheus = "0.17.0"
+axum = "0.8.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 chrono = "0.4"
