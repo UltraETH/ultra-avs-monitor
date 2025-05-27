@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AVS Boost Monitor - Bid Explorer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+        }
+        .container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .controls label {
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .controls input[type="file"] {
+            margin-right: 10px;
+        }
+        .controls button {
+            padding: 10px 15px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .controls button:hover {
+            background-color: #2980b9;
+        }
+        .query-section {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        .query-section:last-child {
+            border-bottom: none;
+        }
+        .query-section h2 {
+            color: #3498db;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #ecf0f1;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .status {
+            margin-top: 10px;
+            font-style: italic;
+            color: #7f8c8d;
+        }
+        .error {
+            color: #c0392b;
+            font-weight: bold;
+        }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+            display: none; /* Hidden by default */
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AVS Boost Monitor - Bid Explorer</h1>
+
+        <div class="controls">
+            <label for="dbFile">Select SQLite Database File:</label>
+            <input type="file" id="dbFile" accept=".db,.sqlite,.sqlite3">
+            <button id="loadDbButton">Load Database & Run Queries</button>
+            <div id="statusMessage" class="status"></div>
+            <div id="loader" class="loader"></div>
+        </div>
+
+        <div id="queryResults">
+            <!-- Query results will be injected here by JavaScript -->
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+    <script>
+        const queries = [
+            {
+                id: "totalBids",
+                title: "1. Total Bids Recorded",
+                sql: "SELECT COUNT(*) AS total_bids FROM bid_traces;"
+            },
+            {
+                id: "recentBids",
+                title: "2. 5 Most Recent Bids (by received_at)",
+                sql: "SELECT block_number, value, builder_pubkey, received_at FROM bid_traces ORDER BY received_at DESC LIMIT 5;"
+            },
+            {
+                id: "highestValueBids",
+                title: "3. 5 Highest Value Bids",
+                sql: "SELECT block_number, value, builder_pubkey, slot FROM bid_traces ORDER BY CAST(value AS INTEGER) DESC LIMIT 5;"
+            },
+            {
+                id: "bidsPerBuilder",
+                title: "4. Bid Count per Builder (Top 5)",
+                sql: "SELECT builder_pubkey, COUNT(*) as bid_count FROM bid_traces GROUP BY builder_pubkey ORDER BY bid_count DESC LIMIT 5;"
+            },
+            {
+                id: "avgBidValuePerBuilder",
+                title: "5. Average Bid Value per Builder (Top 5 by Avg Value)",
+                sql: "SELECT builder_pubkey, AVG(CAST(value AS INTEGER)) as avg_value FROM bid_traces GROUP BY builder_pubkey ORDER BY avg_value DESC LIMIT 5;"
+            },
+            {
+                id: "bidsForSpecificBlock",
+                title: "6. Bids for a Specific Block (Example: Block '123456')",
+                sql: "SELECT slot, value, builder_pubkey FROM bid_traces WHERE block_number = '123456';"
+            },
+            {
+                id: "uniqueBlocksWithBids",
+                title: "7. Number of Unique Blocks with Bids",
+                sql: "SELECT COUNT(DISTINCT block_number) AS unique_block_count FROM bid_traces;"
+            },
+            {
+                id: "bidsLastHour",
+                title: "8. Bids Received in the Last Hour",
+                sql: "SELECT block_number, value, builder_pubkey, received_at FROM bid_traces WHERE received_at >= datetime('now', '-1 hour') ORDER BY received_at DESC LIMIT 10;"
+            },
+            {
+                id: "bidsOver1Eth",
+                title: "9. Bids with Value > 1 ETH (1000000000000000000 Wei)",
+                sql: "SELECT block_number, value, builder_pubkey FROM bid_traces WHERE CAST(value AS INTEGER) > 1000000000000000000 ORDER BY CAST(value AS INTEGER) DESC LIMIT 5;"
+            },
+            {
+                id: "uniqueBuilders",
+                title: "10. List Unique Builder Public Keys (Top 10)",
+                sql: "SELECT DISTINCT builder_pubkey FROM bid_traces ORDER BY builder_pubkey LIMIT 10;"
+            }
+        ];
+
+        const dbFileElement = document.getElementById('dbFile');
+        const loadDbButton = document.getElementById('loadDbButton');
+        const statusMessageElement = document.getElementById('statusMessage');
+        const queryResultsContainer = document.getElementById('queryResults');
+        const loaderElement = document.getElementById('loader');
+
+        let db = null;
+
+        async function loadDatabase(file) {
+            statusMessageElement.textContent = 'Loading database...';
+            loaderElement.style.display = 'block';
+            queryResultsContainer.innerHTML = ''; // Clear previous results
+
+            try {
+                const SQL = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}` });
+                const fileBuffer = await file.arrayBuffer();
+                db = new SQL.Database(new Uint8Array(fileBuffer));
+                statusMessageElement.textContent = `Database '${file.name}' loaded successfully. Running queries...`;
+                runAllQueries();
+            } catch (error) {
+                console.error('Error loading database:', error);
+                statusMessageElement.innerHTML = `<span class="error">Error loading database: ${error.message}</span>`;
+                db = null;
+            } finally {
+                loaderElement.style.display = 'none';
+            }
+        }
+
+        function runAllQueries() {
+            if (!db) {
+                statusMessageElement.innerHTML = '<span class="error">No database loaded. Please select a file.</span>';
+                return;
+            }
+
+            queries.forEach(queryInfo => {
+                const sectionDiv = document.createElement('div');
+                sectionDiv.className = 'query-section';
+                sectionDiv.id = `query-${queryInfo.id}`;
+
+                const titleElement = document.createElement('h2');
+                titleElement.textContent = queryInfo.title;
+                sectionDiv.appendChild(titleElement);
+
+                const resultDiv = document.createElement('div');
+                resultDiv.id = `result-${queryInfo.id}`;
+                sectionDiv.appendChild(resultDiv);
+
+                queryResultsContainer.appendChild(sectionDiv);
+
+                try {
+                    const results = db.exec(queryInfo.sql);
+                    renderResults(resultDiv, results);
+                } catch (error) {
+                    console.error(`Error executing query "${queryInfo.title}":`, error);
+                    resultDiv.innerHTML = `<p class="error">Error executing query: ${error.message}</p>`;
+                }
+            });
+            statusMessageElement.textContent = 'All queries executed.';
+        }
+
+        function renderResults(element, results) {
+            if (!results || results.length === 0) {
+                element.innerHTML = '<p>No results found for this query.</p>';
+                return;
+            }
+
+            // sql.js returns an array of result objects. We usually care about the first one.
+            const firstResult = results[0];
+            if (!firstResult || !firstResult.columns || !firstResult.values) {
+                 element.innerHTML = '<p>Query executed, but no data returned in expected format.</p>';
+                return;
+            }
+
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+            const headerRow = document.createElement('tr');
+
+            firstResult.columns.forEach(colName => {
+                const th = document.createElement('th');
+                th.textContent = colName;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            firstResult.values.forEach(rowData => {
+                const tr = document.createElement('tr');
+                rowData.forEach(cellData => {
+                    const td = document.createElement('td');
+                    td.textContent = cellData === null ? 'NULL' : cellData;
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            element.appendChild(table);
+        }
+
+        loadDbButton.addEventListener('click', () => {
+            const file = dbFileElement.files[0];
+            if (file) {
+                loadDatabase(file);
+            } else {
+                statusMessageElement.innerHTML = '<span class="error">Please select a database file first.</span>';
+            }
+        });
+
+        // Initial message
+        statusMessageElement.textContent = 'Select a SQLite database file and click "Load Database & Run Queries".';
+
+    </script>
+</body>
+</html>

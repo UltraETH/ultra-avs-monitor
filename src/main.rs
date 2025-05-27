@@ -1,4 +1,4 @@
-use alloy_primitives::U64;
+use alloy_primitives::{U64, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use alloy_rpc_client::RpcClient;
 use clap::Parser;

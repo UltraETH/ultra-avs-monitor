@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,7 +5,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Pool, Sqlite};
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, instrument}; // Removed warn
 
 use crate::errors::{BoostMonitorError, Result};
 use crate::types::BidTrace;

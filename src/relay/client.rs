@@ -212,15 +212,21 @@ mod tests {
         client.failed_requests = 1;
         assert!(!client.is_circuit_open());
 
-        client.failed_requests = 2;
-        assert!(client.failed_requests >= client.circuit_breaker_threshold);
-        assert!(client.last_attempt_time.elapsed() <= CIRCUIT_BREAKER_COOL_DOWN);
-        assert!(!client.is_circuit_open());
+        client.failed_requests = 2; // Circuit is now tripped
+        assert!(client.is_circuit_tripped());
+        // Immediately after tripping, it's in cool-down, so is_circuit_open() should be true
+        assert!(client.is_circuit_open(), "Circuit should be open (tripped and in cool-down)");
 
+        // Wait for cool-down to pass
         tokio::time::sleep(CIRCUIT_BREAKER_COOL_DOWN + Duration::from_secs(1)).await;
-        assert!(client.is_circuit_open());
 
-        // client.reset_circuit(); // Removed call to the removed method
-        // assert!(!client.is_circuit_open()); // This assertion is no longer valid without reset_circuit
+        // After cool-down, is_circuit_tripped() is still true, but is_circuit_open() should be false (half-open state)
+        assert!(client.is_circuit_tripped(), "Circuit should still be tripped after cool-down");
+        assert!(!client.is_circuit_open(), "Circuit should NOT be open after cool-down (half-open state, ready for test request)");
+
+        // Simulate a successful request to reset the circuit
+        client.record_success();
+        assert!(!client.is_circuit_tripped(), "Circuit should not be tripped after success");
+        assert!(!client.is_circuit_open(), "Circuit should not be open after success");
     }
 }

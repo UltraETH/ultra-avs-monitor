@@ -151,7 +151,7 @@ impl BidManager {
             return;
         }
 
-        let threshold_block = if current_block_number.as_u64() > retention_blocks {
+        let threshold_block = if current_block_number.to::<u64>() > retention_blocks {
             current_block_number - U256::from(retention_blocks)
         } else {
             U256::ZERO
