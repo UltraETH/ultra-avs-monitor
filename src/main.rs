@@ -1,4 +1,4 @@
-use alloy_primitives::{U64, U256};
+use alloy_primitives::{U256, U64};
 use alloy_provider::{Provider, ProviderBuilder};
 use alloy_rpc_client::RpcClient;
 use clap::Parser;
@@ -17,6 +17,7 @@ use ultra_avs_monitor::{
     bid_manager::BidManager,
     config::Config,
     database::sqlite_writer::SqliteWriter,
+    delivered_payload_manager::{DeliveredPayloadManager, DeliveredPayloadSinks},
     errors::{BoostMonitorError, Result},
     file_writer::FileWriter,
     relay_clients::RelayClients,
@@ -94,73 +95,90 @@ async fn main() -> Result<()> {
     }
 
     let bid_manager = Arc::new(BidManager::new());
+    let mut file_writer_arc: Option<Arc<FileWriter>> = None;
+    let mut sqlite_writer_arc: Option<Arc<SqliteWriter>> = None;
 
     if config.output.file_output_enabled {
         info!("File output enabled: {}", config.output.file_output_path);
-        let file_writer = FileWriter::new(
+        let fw = FileWriter::new(
             config.output.file_output_path.clone(),
             config.output.flush_interval.as_secs(),
             config.output.batch_size,
         );
+        fw.initialize().await?;
+        fw.start_flush_task().await?;
+        file_writer_arc = Some(Arc::new(fw));
 
-        file_writer.initialize().await?;
-
-        file_writer.start_flush_task().await?;
-
-        let mut bid_subscription = bid_manager.subscribe_to_all_new_bids().await;
-
-        let writer_clone = file_writer.clone();
-
+        let mut bid_subscription_file = bid_manager.subscribe_to_all_new_bids().await;
+        let fw_clone = file_writer_arc.as_ref().unwrap().clone();
         tokio::spawn(async move {
-            while let Some(bid) = bid_subscription.recv().await {
-                if let Err(e) = writer_clone.write_bid(bid.clone()).await {
-                    error!(bid = ?bid, error = %e, "Error writing bid to file");
+            while let Some(bid) = bid_subscription_file.recv().await {
+                if let Err(e) = fw_clone.write_bid(bid.clone()).await {
+                    // Assuming write_bid exists
+                    error!(bid = ?bid, error = %e, "Error writing bid_trace to file");
                 }
             }
         });
     }
 
     if config.output.sqlite_output_enabled {
-        info!("SQLite output enabled: {}", config.output.sqlite_database_path);
-        let sqlite_writer = SqliteWriter::new(
+        info!(
+            "SQLite output enabled: {}",
+            config.output.sqlite_database_path
+        );
+        let sw = SqliteWriter::new(
             config.output.sqlite_database_path.clone(),
             Some(config.output.sqlite_flush_interval_secs),
             Some(config.output.sqlite_batch_size),
         )
         .await?;
-
-        sqlite_writer.initialize().await?;
-        sqlite_writer.start_flush_task().await?;
+        sw.initialize().await?; // This creates bid_traces table
+                                // We need to ensure delivered_payload_traces table is also created.
+                                // For now, SqliteWriter::initialize only creates bid_traces.
+                                // This will be handled when SqliteWriter is fully updated for delivered payloads.
+        sw.start_flush_task().await?; // This starts flush for bid_traces
+        sqlite_writer_arc = Some(Arc::new(sw));
 
         let mut bid_subscription_sqlite = bid_manager.subscribe_to_all_new_bids().await;
-        let sqlite_writer_clone = sqlite_writer.clone(); // Clone for the task
-
+        let sw_clone_bids = sqlite_writer_arc.as_ref().unwrap().clone();
         tokio::spawn(async move {
             while let Some(bid) = bid_subscription_sqlite.recv().await {
-                if let Err(e) = sqlite_writer_clone.write_bid(bid.clone()).await {
-                    error!(bid = ?bid, error = %e, "Error writing bid to SQLite");
+                if let Err(e) = sw_clone_bids.write_bid_trace(bid.clone()).await {
+                    error!(bid = ?bid, error = %e, "Error writing bid_trace to SQLite");
                 }
             }
-            // Gracefully shutdown the sqlite_writer when the bid channel closes
-            if let Err(e) = sqlite_writer_clone.shutdown().await {
-                error!(error = %e, "Error shutting down SQLite writer");
+            // Gracefully shutdown the sqlite_writer part for bids when the bid channel closes
+            if let Err(e) = sw_clone_bids.shutdown().await {
+                // This currently shuts down the whole pool
+                error!(error = %e, "Error shutting down SQLite writer for bids");
             }
         });
 
-        // Periodically check for errors from the SQLite writer's background task
-        let sqlite_error_check_writer = sqlite_writer.clone();
+        let sw_error_check = sqlite_writer_arc.as_ref().unwrap().clone();
         tokio::spawn(async move {
-            let mut error_check_interval = time::interval(Duration::from_secs(30)); // Check every 30s
+            let mut error_check_interval = time::interval(Duration::from_secs(30));
             loop {
                 error_check_interval.tick().await;
-                if let Some(err) = sqlite_error_check_writer.check_for_errors().await {
+                if let Some(err) = sw_error_check.check_for_errors().await {
                     error!(sqlite_background_error = %err, "Error from SQLite background task");
                 }
             }
         });
     }
 
-    let relay_clients = RelayClients::with_configs(config.relays.clone());
+    // Setup DeliveredPayloadManager
+    let delivered_payload_sinks = DeliveredPayloadSinks {
+        sqlite_writer: sqlite_writer_arc.clone(), // Pass the Arc<SqliteWriter>
+        file_writer: file_writer_arc.clone(),     // Pass the Arc<FileWriter>
+    };
+    let delivered_payload_manager = Arc::new(DeliveredPayloadManager::new(delivered_payload_sinks));
+
+    // Pass Arc<BidManager> and Arc<DeliveredPayloadManager> to RelayClients
+    let relay_clients = RelayClients::with_configs(
+        config.relays.clone(),
+        bid_manager.clone(),               // Pass the Arc
+        delivered_payload_manager.clone(), // Pass the Arc
+    );
     let relay_clients_arc = Arc::new(Mutex::new(relay_clients));
 
     {

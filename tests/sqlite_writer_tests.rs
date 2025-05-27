@@ -1,12 +1,12 @@
 #[cfg(test)]
 mod sqlite_writer_tests {
+    use alloy_primitives::{Address, U256};
+    use sqlx::{Row, SqlitePool};
     use std::time::Duration;
     use tempfile::tempdir;
     use tokio::time::sleep;
     use ultra_avs_monitor::database::sqlite_writer::SqliteWriter;
     use ultra_avs_monitor::types::BidTrace;
-    use alloy_primitives::{Address, U256};
-    use sqlx::{Row, SqlitePool};
 
     fn create_test_bid(block_num: u64, value: u64, builder_pubkey_suffix: &str) -> BidTrace {
         BidTrace {
@@ -37,12 +37,21 @@ mod sqlite_writer_tests {
     #[tokio::test]
     async fn test_sqlite_writer_initialize_creates_table() {
         let dir = tempdir().unwrap();
-        let db_path = dir.path().join("test_init.db").to_str().unwrap().to_string();
+        let db_path = dir
+            .path()
+            .join("test_init.db")
+            .to_str()
+            .unwrap()
+            .to_string();
 
-        let writer = SqliteWriter::new(db_path.clone(), Some(1), Some(5)).await.unwrap();
+        let writer = SqliteWriter::new(db_path.clone(), Some(1), Some(5))
+            .await
+            .unwrap();
         writer.initialize().await.unwrap();
 
-        let pool = SqlitePool::connect(&format!("sqlite:{}", db_path)).await.unwrap();
+        let pool = SqlitePool::connect(&format!("sqlite:{}", db_path))
+            .await
+            .unwrap();
         let row_count = count_rows(&pool, "bid_traces").await;
         assert_eq!(row_count, 0);
         pool.close().await;
@@ -52,16 +61,25 @@ mod sqlite_writer_tests {
     #[tokio::test]
     async fn test_sqlite_writer_write_and_flush_bid() {
         let dir = tempdir().unwrap();
-        let db_path = dir.path().join("test_write_flush.db").to_str().unwrap().to_string();
+        let db_path = dir
+            .path()
+            .join("test_write_flush.db")
+            .to_str()
+            .unwrap()
+            .to_string();
 
-        let writer = SqliteWriter::new(db_path.clone(), Some(1), Some(1)).await.unwrap(); // Batch size 1 for immediate flush
+        let writer = SqliteWriter::new(db_path.clone(), Some(1), Some(1))
+            .await
+            .unwrap(); // Batch size 1 for immediate flush
         writer.initialize().await.unwrap();
 
         let bid1 = create_test_bid(100, 1000, "a");
         writer.write_bid(bid1.clone()).await.unwrap();
         // write_bid should auto-flush due to batch_size = 1
 
-        let pool = SqlitePool::connect(&format!("sqlite:{}", db_path)).await.unwrap();
+        let pool = SqlitePool::connect(&format!("sqlite:{}", db_path))
+            .await
+            .unwrap();
         let row_count = count_rows(&pool, "bid_traces").await;
         assert_eq!(row_count, 1);
 
@@ -82,9 +100,16 @@ mod sqlite_writer_tests {
     #[tokio::test]
     async fn test_sqlite_writer_batch_write() {
         let dir = tempdir().unwrap();
-        let db_path = dir.path().join("test_batch.db").to_str().unwrap().to_string();
+        let db_path = dir
+            .path()
+            .join("test_batch.db")
+            .to_str()
+            .unwrap()
+            .to_string();
 
-        let writer = SqliteWriter::new(db_path.clone(), Some(60), Some(3)).await.unwrap(); // Batch size 3
+        let writer = SqliteWriter::new(db_path.clone(), Some(60), Some(3))
+            .await
+            .unwrap(); // Batch size 3
         writer.initialize().await.unwrap();
 
         let bid1 = create_test_bid(200, 2000, "a");
@@ -95,7 +120,9 @@ mod sqlite_writer_tests {
         writer.write_bid(bid1).await.unwrap();
         writer.write_bid(bid2).await.unwrap();
 
-        let pool = SqlitePool::connect(&format!("sqlite:{}", db_path)).await.unwrap();
+        let pool = SqlitePool::connect(&format!("sqlite:{}", db_path))
+            .await
+            .unwrap();
         let mut row_count = count_rows(&pool, "bid_traces").await;
         assert_eq!(row_count, 0, "Bids should not be flushed yet");
 
@@ -118,21 +145,33 @@ mod sqlite_writer_tests {
     #[tokio::test]
     async fn test_sqlite_writer_auto_flush_task() {
         let dir = tempdir().unwrap();
-        let db_path = dir.path().join("test_auto_flush.db").to_str().unwrap().to_string();
+        let db_path = dir
+            .path()
+            .join("test_auto_flush.db")
+            .to_str()
+            .unwrap()
+            .to_string();
 
-        let writer = SqliteWriter::new(db_path.clone(), Some(1), Some(10)).await.unwrap(); // Flush interval 1 sec
+        let writer = SqliteWriter::new(db_path.clone(), Some(1), Some(10))
+            .await
+            .unwrap(); // Flush interval 1 sec
         writer.initialize().await.unwrap();
         writer.start_flush_task().await.unwrap();
 
         let bid1 = create_test_bid(300, 3000, "a");
         writer.write_bid(bid1).await.unwrap();
 
-        let pool = SqlitePool::connect(&format!("sqlite:{}", db_path)).await.unwrap();
+        let pool = SqlitePool::connect(&format!("sqlite:{}", db_path))
+            .await
+            .unwrap();
         // Wait for auto-flush to occur
         sleep(Duration::from_secs(2)).await;
 
         let row_count = count_rows(&pool, "bid_traces").await;
-        assert_eq!(row_count, 1, "Bid should be auto-flushed by background task");
+        assert_eq!(
+            row_count, 1,
+            "Bid should be auto-flushed by background task"
+        );
 
         pool.close().await;
         writer.shutdown().await.unwrap();
@@ -141,9 +180,16 @@ mod sqlite_writer_tests {
     #[tokio::test]
     async fn test_sqlite_writer_ignore_duplicate_block_hash() {
         let dir = tempdir().unwrap();
-        let db_path = dir.path().join("test_duplicates.db").to_str().unwrap().to_string();
+        let db_path = dir
+            .path()
+            .join("test_duplicates.db")
+            .to_str()
+            .unwrap()
+            .to_string();
 
-        let writer = SqliteWriter::new(db_path.clone(), Some(1), Some(1)).await.unwrap();
+        let writer = SqliteWriter::new(db_path.clone(), Some(1), Some(1))
+            .await
+            .unwrap();
         writer.initialize().await.unwrap();
 
         let bid1 = create_test_bid(400, 4000, "a");
@@ -152,7 +198,9 @@ mod sqlite_writer_tests {
         writer.write_bid(bid1.clone()).await.unwrap();
         writer.write_bid(bid_duplicate).await.unwrap(); // Should be ignored due to PRIMARY KEY constraint
 
-        let pool = SqlitePool::connect(&format!("sqlite:{}", db_path)).await.unwrap();
+        let pool = SqlitePool::connect(&format!("sqlite:{}", db_path))
+            .await
+            .unwrap();
         let row_count = count_rows(&pool, "bid_traces").await;
         assert_eq!(row_count, 1);
 
@@ -162,7 +210,11 @@ mod sqlite_writer_tests {
             .await
             .unwrap();
         let value_db: String = row.get("value");
-        assert_eq!(value_db, bid1.value.to_string(), "Original bid's value should be present");
+        assert_eq!(
+            value_db,
+            bid1.value.to_string(),
+            "Original bid's value should be present"
+        );
 
         pool.close().await;
         writer.shutdown().await.unwrap();
@@ -171,16 +223,25 @@ mod sqlite_writer_tests {
     #[tokio::test]
     async fn test_sqlite_writer_shutdown_flushes_remaining() {
         let dir = tempdir().unwrap();
-        let db_path = dir.path().join("test_shutdown_flush.db").to_str().unwrap().to_string();
+        let db_path = dir
+            .path()
+            .join("test_shutdown_flush.db")
+            .to_str()
+            .unwrap()
+            .to_string();
 
-        let writer = SqliteWriter::new(db_path.clone(), Some(60), Some(10)).await.unwrap(); // Long flush interval
+        let writer = SqliteWriter::new(db_path.clone(), Some(60), Some(10))
+            .await
+            .unwrap(); // Long flush interval
         writer.initialize().await.unwrap();
         // Not starting flush task to test manual shutdown flush
 
         let bid1 = create_test_bid(500, 5000, "a");
         writer.write_bid(bid1).await.unwrap();
 
-        let pool = SqlitePool::connect(&format!("sqlite:{}", db_path)).await.unwrap();
+        let pool = SqlitePool::connect(&format!("sqlite:{}", db_path))
+            .await
+            .unwrap();
         let mut row_count = count_rows(&pool, "bid_traces").await;
         assert_eq!(row_count, 0, "Bid should not be flushed yet");
 

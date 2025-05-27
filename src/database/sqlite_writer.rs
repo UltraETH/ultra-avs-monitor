@@ -85,36 +85,60 @@ impl SqliteWriter {
             .map_err(|e| BoostMonitorError::DatabaseError(format!("Failed to create bid_traces table: {}", e)))?;
 
         info!("SQLite bid_traces table ensured");
+
+        // Also ensure delivered_payload_traces table exists
+        let create_delivered_payloads_table_query = "
+        CREATE TABLE IF NOT EXISTS delivered_payload_traces (
+            slot TEXT NOT NULL,
+            parent_hash TEXT NOT NULL,
+            block_hash TEXT NOT NULL PRIMARY KEY,
+            builder_pubkey TEXT NOT NULL,
+            proposer_pubkey TEXT NOT NULL,
+            proposer_fee_recipient TEXT NOT NULL,
+            value TEXT NOT NULL,
+            block_number TEXT NOT NULL,
+            num_tx TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            received_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );";
+
+        sqlx::query(create_delivered_payloads_table_query)
+            .execute(self.pool.as_ref())
+            .await
+            .map_err(|e| BoostMonitorError::DatabaseError(format!("Failed to create delivered_payload_traces table: {}", e)))?;
+
+        info!("SQLite delivered_payload_traces table ensured");
         Ok(())
     }
 
     #[instrument(skip(self, bid))]
-    pub async fn write_bid(&self, bid: BidTrace) -> Result<()> {
+    pub async fn write_bid_trace(&self, bid: BidTrace) -> Result<()> {
         let mut batch = self.current_batch.write().await;
-        debug!(value = %bid.value, "Adding bid to SQLite batch");
+        debug!(value = %bid.value, "Adding bid_trace to SQLite batch");
         batch.push(bid);
 
         if batch.len() >= self.batch_size {
             drop(batch); // Release lock before flushing
-            self.flush().await?;
+            self.flush_bid_traces().await?;
         }
         Ok(())
     }
 
+    // Renamed from flush to be specific to bid_traces
     #[instrument(skip(self))]
-    pub async fn flush(&self) -> Result<()> {
+    pub async fn flush_bid_traces(&self) -> Result<()> {
         let mut batch_guard = self.current_batch.write().await;
         if batch_guard.is_empty() {
-            debug!("SQLite flush called but batch is empty, skipping write");
+            debug!("SQLite flush_bid_traces called but batch is empty, skipping write");
             return Ok(());
         }
 
         let bids_to_write = std::mem::replace(&mut *batch_guard, Vec::with_capacity(self.batch_size));
         drop(batch_guard); // Release lock before database operation
 
-        info!(num_bids = bids_to_write.len(), "Flushing bid batch to SQLite");
+        info!(num_bids = bids_to_write.len(), "Flushing bid_traces batch to SQLite");
 
-        let mut tx = self.pool.begin().await.map_err(|e| BoostMonitorError::DatabaseError(format!("Failed to begin transaction: {}", e)))?;
+        let mut tx = self.pool.begin().await.map_err(|e| BoostMonitorError::DatabaseError(format!("Failed to begin transaction for bid_traces: {}", e)))?;
 
         for bid in bids_to_write.iter() {
             let query = "
@@ -140,28 +164,61 @@ impl SqliteWriter {
                 .bind(bid.timestamp_ms.to_string())
                 .execute(&mut *tx) // Use &mut *tx
                 .await
-                .map_err(|e| BoostMonitorError::DatabaseError(format!("Failed to insert bid: {}", e)))?;
+                .map_err(|e| BoostMonitorError::DatabaseError(format!("Failed to insert bid_trace: {}", e)))?;
         }
 
-        tx.commit().await.map_err(|e| BoostMonitorError::DatabaseError(format!("Failed to commit transaction: {}", e)))?;
-        info!(count = bids_to_write.len(), "SQLite batch flushed successfully");
+        tx.commit().await.map_err(|e| BoostMonitorError::DatabaseError(format!("Failed to commit bid_traces transaction: {}", e)))?;
+        info!(count = bids_to_write.len(), "SQLite bid_traces batch flushed successfully");
         Ok(())
     }
 
+    // New method for delivered payloads
+    #[instrument(skip(self, payload))]
+    pub async fn write_delivered_payload(&self, payload: DeliveredPayloadTrace) -> Result<()> {
+        // For simplicity, directly insert without batching for now.
+        // Production systems might want batching similar to bid_traces.
+        debug!(block_hash = %payload.block_hash, value = %payload.value, "Writing delivered_payload to SQLite");
+
+        let query = "
+        INSERT OR IGNORE INTO delivered_payload_traces (
+            slot, parent_hash, block_hash, builder_pubkey, proposer_pubkey,
+            proposer_fee_recipient, value, block_number, num_tx, timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+
+        sqlx::query(query)
+            .bind(payload.slot.to_string())
+            .bind(&payload.parent_hash)
+            .bind(&payload.block_hash)
+            .bind(&payload.builder_pubkey)
+            .bind(&payload.proposer_pubkey)
+            .bind(format!("{:?}", payload.proposer_fee_recipient))
+            .bind(payload.value.to_string())
+            .bind(payload.block_number.to_string())
+            .bind(payload.num_tx.to_string())
+            .bind(payload.timestamp.to_string())
+            .execute(self.pool.as_ref())
+            .await
+            .map_err(|e| BoostMonitorError::DatabaseError(format!("Failed to insert delivered_payload: {}", e)))?;
+
+        info!(block_hash = %payload.block_hash, "Delivered payload written to SQLite");
+        Ok(())
+    }
+
+
     #[instrument(skip(self))]
     pub async fn start_flush_task(&self) -> Result<()> {
-        info!("Starting SQLite background flush task");
-        let writer_clone = self.clone(); // Clone for the spawned task
+        info!("Starting SQLite background flush task for bid_traces");
+        let writer_clone = self.clone();
 
         tokio::spawn(async move {
             let mut flush_timer = interval(writer_clone.flush_interval);
             loop {
                 flush_timer.tick().await;
-                debug!("SQLite flush interval ticked");
-                if let Err(e) = writer_clone.flush().await {
-                    error!(error = %e, "Error flushing data to SQLite in background task");
+                debug!("SQLite bid_traces flush interval ticked");
+                if let Err(e) = writer_clone.flush_bid_traces().await { // Call specific flush
+                    error!(error = %e, "Error flushing bid_traces to SQLite in background task");
                     if let Err(send_err) = writer_clone.error_sender.send(e).await {
-                         error!("Failed to send SQLite error to main application: {}", send_err);
+                         error!("Failed to send SQLite error (bid_traces) to main application: {}", send_err);
                     }
                 }
             }
@@ -171,8 +228,9 @@ impl SqliteWriter {
 
     #[instrument(skip(self))]
     pub async fn shutdown(&self) -> Result<()> {
-        info!("Shutting down SQLite writer, flushing remaining data");
-        self.flush().await?;
+        info!("Shutting down SQLite writer, flushing remaining bid_traces");
+        self.flush_bid_traces().await?; // Flush bid_traces specifically
+        // Delivered payloads are written directly for now, so no separate flush needed here.
         self.pool.close().await;
         info!("SQLite writer shut down");
         Ok(())

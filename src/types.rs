@@ -10,7 +10,7 @@ use crate::utils::serde_helpers::deserialize_u256_from_string;
 
 mod address_serde {
     use super::*;
-    use serde::Deserializer;
+    use serde::{Deserializer, Serialize, Serializer};
     use std::str::FromStr;
 
     pub fn serialize<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
@@ -84,3 +84,39 @@ impl PartialOrd for BidTrace {
         Some(self.cmp(other))
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+pub struct DeliveredPayloadTrace {
+    #[serde(deserialize_with = "deserialize_u256_from_string")]
+    pub slot: U256,
+    pub parent_hash: String,
+    pub block_hash: String,
+    pub builder_pubkey: String,
+    pub proposer_pubkey: String,
+    #[serde(with = "address_serde")]
+    pub proposer_fee_recipient: Address,
+    #[serde(deserialize_with = "deserialize_u256_from_string")]
+    pub value: U256,
+    #[serde(deserialize_with = "deserialize_u256_from_string")]
+    pub block_number: U256,
+    #[serde(deserialize_with = "deserialize_u256_from_string")]
+    pub num_tx: U256,
+    #[serde(deserialize_with = "deserialize_u256_from_string")]
+    pub timestamp: U256, // Assuming relays provide this, might be part of execution payload header
+    // timestamp_ms might not be present in delivered payloads, check relay specs
+    // pub timestamp_ms: U256,
+}
+
+impl fmt::Display for DeliveredPayloadTrace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "DeliveredPayloadTrace {{ block_number: {}, builder_pubkey: {}, value: {} }}",
+            self.block_number, self.builder_pubkey, self.value
+        )
+    }
+}
+
+// Delivered payloads are typically unique by block_hash, so Hash/Ord might not be needed
+// in the same way as BidTrace unless we store multiple sources or versions.
+// For now, let's assume block_hash is the primary identifier.

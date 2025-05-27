@@ -1,5 +1,6 @@
 pub mod bid_manager;
 pub mod config;
+pub mod delivered_payload_manager;
 pub mod errors;
 pub mod file_writer;
 pub mod relay;
