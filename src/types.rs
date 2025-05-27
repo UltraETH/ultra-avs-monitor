@@ -4,11 +4,14 @@ use std::{
 };
 
 use alloy_primitives::{Address, U256};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::str::FromStr;
+use serde::{Deserialize, Serialize, Serializer};
+
+use crate::utils::serde_helpers::deserialize_u256_from_string;
 
 mod address_serde {
     use super::*;
+    use serde::Deserializer;
+    use std::str::FromStr;
 
     pub fn serialize<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -51,14 +54,6 @@ pub struct BidTrace {
     pub timestamp: U256,
     #[serde(deserialize_with = "deserialize_u256_from_string")]
     pub timestamp_ms: U256,
-}
-
-fn deserialize_u256_from_string<'de, D>(deserializer: D) -> Result<U256, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    U256::from_str(&s).map_err(serde::de::Error::custom)
 }
 
 impl fmt::Display for BidTrace {

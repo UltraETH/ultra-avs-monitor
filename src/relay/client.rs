@@ -59,12 +59,10 @@ impl RelayClient {
         }
     }
 
-    pub fn is_circuit_open(&self) -> bool {
-        if self.failed_requests >= self.circuit_breaker_threshold {
-            self.last_attempt_time.elapsed() > CIRCUIT_BREAKER_COOL_DOWN
-        } else {
-            false
-        }
+    // This method now strictly checks if the circuit is tripped (threshold met).
+    // The cool-down logic is handled in get_builder_bids.
+    pub fn is_circuit_tripped(&self) -> bool {
+        self.failed_requests >= self.circuit_breaker_threshold
     }
 
     fn record_failure(&mut self) {
@@ -179,8 +177,17 @@ impl RelayService for RelayClient {
         self.failed_requests
     }
 
+    // This now calls the renamed is_circuit_tripped method.
+    // The actual decision to skip a request due to cool-down is in get_builder_bids.
     fn is_circuit_open(&self) -> bool {
-        self.is_circuit_open()
+        if self.is_circuit_tripped() {
+            // If tripped, check if we are still in cool-down.
+            // If not in cool-down, the circuit is effectively "half-open" or ready for a test request.
+            // The get_builder_bids method will allow one attempt if cool-down has passed.
+            self.last_attempt_time.elapsed() <= CIRCUIT_BREAKER_COOL_DOWN
+        } else {
+            false // Not tripped, so not open in the sense of preventing requests.
+        }
     }
 }
 

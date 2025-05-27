@@ -6,6 +6,8 @@ pub mod relay;
 pub mod relay_client;
 pub mod relay_clients;
 pub mod relay_wrapper;
+pub mod database;
 pub mod test_helpers;
 pub mod types;
+pub mod utils;
 pub mod websocket;

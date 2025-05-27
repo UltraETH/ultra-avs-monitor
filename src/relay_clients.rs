@@ -62,8 +62,9 @@ impl RelayClients {
             select! {
                 _ = interval_timer.tick() => {
                     if time::Instant::now().duration_since(start_time) >= duration {
-                        debug!(block = %block_num, "Polling duration exceeded, clearing bids");
-                        self.bid_manager.clear_all().await?;
+                        debug!(block = %block_num, "Polling duration exceeded");
+                        // Bids are now cleared by the BidManager's prune_old_blocks method,
+                        // so no explicit clear_all is needed here.
                         break;
                     }
 
@@ -77,11 +78,12 @@ impl RelayClients {
                         let handle = tokio::spawn(async move {
                             let mut client = client_mutex.lock().await; // Acquire mutex lock
 
-                            // Check circuit breaker state before polling
-                            if client.is_circuit_open() {
-                                debug!(client_url = %client.get_url(), block = %block_num, "Circuit breaker open, skipping poll");
-                                return; // Skip this client
-                            }
+                            // The get_builder_bids method now handles the circuit breaker logic internally (checking if tripped and cool-down).
+                            // So, an explicit check here is no longer needed, but we can keep the debug log if desired.
+                            // if client.is_circuit_open() {
+                            //     debug!(client_url = %client.get_url(), block = %block_num, "Circuit breaker open (still in cool-down), skipping poll");
+                            //     return; // Skip this client
+                            // }
 
                             match client.get_builder_bids(block_num).await {
                                 Ok(bid_traces) => {

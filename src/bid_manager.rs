@@ -145,5 +145,56 @@ impl BidManager {
         rx
     }
 
-    // Note: get_bids and get_highest_bid methods are removed as they are replaced by per-block versions.
+    pub async fn prune_old_blocks(&self, current_block_number: U256, retention_blocks: u64) {
+        if retention_blocks == 0 {
+            debug!("Block retention is disabled (retention_blocks = 0), skipping pruning.");
+            return;
+        }
+
+        let threshold_block = if current_block_number.as_u64() > retention_blocks {
+            current_block_number - U256::from(retention_blocks)
+        } else {
+            U256::ZERO
+        };
+
+        let mut all_bids_guard = self.all_bids.write().await;
+        let mut highest_bids_guard = self.highest_bids.write().await;
+
+        let mut removed_all_bids = 0;
+        let mut removed_highest_bids = 0;
+
+        all_bids_guard.retain(|&block_num, _| {
+            if block_num < threshold_block {
+                removed_all_bids += 1;
+                false
+            } else {
+                true
+            }
+        });
+
+        highest_bids_guard.retain(|&block_num, _| {
+            if block_num < threshold_block {
+                removed_highest_bids += 1;
+                false
+            } else {
+                true
+            }
+        });
+
+        if removed_all_bids > 0 || removed_highest_bids > 0 {
+            info!(
+                current_block = %current_block_number,
+                threshold_block = %threshold_block,
+                removed_all_bids,
+                removed_highest_bids,
+                "Pruned old blocks from BidManager"
+            );
+        } else {
+            debug!(
+                current_block = %current_block_number,
+                threshold_block = %threshold_block,
+                "No old blocks to prune in BidManager"
+            );
+        }
+    }
 }

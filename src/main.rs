@@ -16,6 +16,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 use ultra_avs_monitor::{
     bid_manager::BidManager,
     config::Config,
+    database::sqlite_writer::SqliteWriter,
     errors::{BoostMonitorError, Result},
     file_writer::FileWriter,
     relay_clients::RelayClients,
@@ -95,6 +96,7 @@ async fn main() -> Result<()> {
     let bid_manager = Arc::new(BidManager::new());
 
     if config.output.file_output_enabled {
+        info!("File output enabled: {}", config.output.file_output_path);
         let file_writer = FileWriter::new(
             config.output.file_output_path.clone(),
             config.output.flush_interval.as_secs(),
@@ -113,6 +115,46 @@ async fn main() -> Result<()> {
             while let Some(bid) = bid_subscription.recv().await {
                 if let Err(e) = writer_clone.write_bid(bid.clone()).await {
                     error!(bid = ?bid, error = %e, "Error writing bid to file");
+                }
+            }
+        });
+    }
+
+    if config.output.sqlite_output_enabled {
+        info!("SQLite output enabled: {}", config.output.sqlite_database_path);
+        let sqlite_writer = SqliteWriter::new(
+            config.output.sqlite_database_path.clone(),
+            Some(config.output.sqlite_flush_interval_secs),
+            Some(config.output.sqlite_batch_size),
+        )
+        .await?;
+
+        sqlite_writer.initialize().await?;
+        sqlite_writer.start_flush_task().await?;
+
+        let mut bid_subscription_sqlite = bid_manager.subscribe_to_all_new_bids().await;
+        let sqlite_writer_clone = sqlite_writer.clone(); // Clone for the task
+
+        tokio::spawn(async move {
+            while let Some(bid) = bid_subscription_sqlite.recv().await {
+                if let Err(e) = sqlite_writer_clone.write_bid(bid.clone()).await {
+                    error!(bid = ?bid, error = %e, "Error writing bid to SQLite");
+                }
+            }
+            // Gracefully shutdown the sqlite_writer when the bid channel closes
+            if let Err(e) = sqlite_writer_clone.shutdown().await {
+                error!(error = %e, "Error shutting down SQLite writer");
+            }
+        });
+
+        // Periodically check for errors from the SQLite writer's background task
+        let sqlite_error_check_writer = sqlite_writer.clone();
+        tokio::spawn(async move {
+            let mut error_check_interval = time::interval(Duration::from_secs(30)); // Check every 30s
+            loop {
+                error_check_interval.tick().await;
+                if let Some(err) = sqlite_error_check_writer.check_for_errors().await {
+                    error!(sqlite_background_error = %err, "Error from SQLite background task");
                 }
             }
         });
@@ -160,6 +202,9 @@ async fn main() -> Result<()> {
     info!("Service started successfully, press Ctrl+C to stop");
 
     if config.output.metrics_enabled {
+        let metrics_addr = config.get_metrics_addr();
+        setup_metrics_server(metrics_addr).await?;
+
         let metrics_relay_clients_arc = relay_clients_arc.clone();
         let mut metrics_shutdown_rx = shutdown_tx.subscribe();
         tokio::spawn(async move {
@@ -193,6 +238,8 @@ async fn main() -> Result<()> {
                     info!("Shutdown signal received, stopping service...");
                     let _ = shutdown_tx.send(());
                     websocket_server.shutdown().await;
+                    // Note: SqliteWriter will shutdown when its bid_subscription channel closes.
+                    // File writer also stops when its bid_subscription channel closes.
                     break;
                 }
 
@@ -218,6 +265,13 @@ async fn main() -> Result<()> {
                                     error!(block_number = latest_u64, error = %e,
                                           "Error during relay polling");
                                 }
+
+                                // Prune old blocks from BidManager
+                                bid_manager.prune_old_blocks(
+                                    U256::from(latest_u64),
+                                    config.polling.block_retention_blocks
+                                ).await;
+
                             } else {
                                 debug!(block_number = last_processed_block, "No new block detected");
                             }
