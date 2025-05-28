@@ -1,24 +1,31 @@
 use std::{sync::Arc, time::Duration};
 
 use alloy_primitives::U64;
-use tokio::{select, time};
-use tracing::{error, debug, instrument};
+use tokio::{select, sync::Mutex, time};
+use tracing::{debug, error, instrument};
 
 use crate::{
     bid_manager::BidManager,
     config::RelayConfig,
-    relay::RelayService,
-    relay::client::RelayClient,
+    delivered_payload_manager::DeliveredPayloadManager, // Added
     errors::Result,
+    relay::client::RelayClient,
+    relay::RelayService,
 };
 
 pub struct RelayClients {
-    pub clients: Vec<Arc<dyn RelayService + Send + Sync>>,
+    pub clients: Vec<Arc<Mutex<dyn RelayService + Send + Sync>>>,
     pub bid_manager: Arc<BidManager>,
+    pub delivered_payload_manager: Arc<DeliveredPayloadManager>, // Added
 }
 
 impl RelayClients {
-    pub fn new(relay_urls: Vec<String>) -> Self {
+    // Constructor needs to be updated to accept DeliveredPayloadManager
+    pub fn new(
+        relay_urls: Vec<String>,
+        bid_manager: Arc<BidManager>,
+        delivered_payload_manager: Arc<DeliveredPayloadManager>,
+    ) -> Self {
         Self {
             clients: relay_urls
                 .into_iter()
@@ -28,27 +35,41 @@ impl RelayClients {
                         request_timeout: Duration::from_secs(5),
                         circuit_breaker_threshold: 3,
                     };
-                    Arc::new(RelayClient::new(config)) as Arc<dyn RelayService + Send + Sync>
+                    Arc::new(Mutex::new(RelayClient::new(config)))
+                        as Arc<Mutex<dyn RelayService + Send + Sync>>
                 })
                 .collect(),
-            bid_manager: Arc::new(BidManager::new()),
+            bid_manager,
+            delivered_payload_manager,
         }
     }
 
-    pub fn with_configs(configs: Vec<RelayConfig>) -> Self {
+    // Constructor needs to be updated
+    pub fn with_configs(
+        configs: Vec<RelayConfig>,
+        bid_manager: Arc<BidManager>,
+        delivered_payload_manager: Arc<DeliveredPayloadManager>,
+    ) -> Self {
         Self {
             clients: configs
                 .into_iter()
                 .map(|config| {
-                    Arc::new(RelayClient::new(config)) as Arc<dyn RelayService + Send + Sync>
+                    Arc::new(Mutex::new(RelayClient::new(config)))
+                        as Arc<Mutex<dyn RelayService + Send + Sync>>
                 })
                 .collect(),
-            bid_manager: Arc::new(BidManager::new()),
+            bid_manager,
+            delivered_payload_manager,
         }
     }
 
-    #[instrument(skip(self), fields(block = %block_num, interval = ?poll_interval_secs, duration = ?poll_for_secs))]
-    pub async fn poll_for(&mut self, block_num: U64, poll_interval_secs: u64, poll_for_secs: u64) -> Result<()> {
+    #[instrument(skip(self), fields(slot_or_block_num = %slot_or_block_num, interval = ?poll_interval_secs, duration = ?poll_for_secs))]
+    pub async fn poll_for(
+        &mut self,
+        slot_or_block_num: U64, // This can be used as slot for delivered payloads and block_num for bids
+        poll_interval_secs: u64,
+        poll_for_secs: u64,
+    ) -> Result<()> {
         let poll_interval = Duration::from_secs(poll_interval_secs);
         let mut interval_timer = time::interval(poll_interval);
         let start_time = time::Instant::now();
@@ -58,35 +79,54 @@ impl RelayClients {
             select! {
                 _ = interval_timer.tick() => {
                     if time::Instant::now().duration_since(start_time) >= duration {
-                        debug!(block = %block_num, "Polling duration exceeded, clearing bids");
-                        self.bid_manager.clear_all().await?;
+                        debug!(slot_or_block = %slot_or_block_num, "Polling duration exceeded");
                         break;
                     }
 
-                    debug!(block = %block_num, "Polling relays for bids");
+                    debug!(slot_or_block = %slot_or_block_num, "Polling relays for bids and delivered payloads");
                     let mut handles = Vec::new();
-                    for client in &self.clients {
-                        let client = client.clone();
-                        let bid_manager = self.bid_manager.clone();
-                        let block_num = block_num;
+
+                    for client_mutex in &self.clients {
+                        let client_arc = client_mutex.clone(); // Clone Arc for the new task
+                        let bid_manager_arc = self.bid_manager.clone();
+                        let delivered_payload_manager_arc = self.delivered_payload_manager.clone();
+                        let current_slot_or_block = slot_or_block_num;
 
                         let handle = tokio::spawn(async move {
-                            match client.get_builder_bids(block_num).await {
+                            let mut client_guard = client_arc.lock().await;
+
+                            // Fetch Builder Bids
+                            match client_guard.get_builder_bids(current_slot_or_block).await {
                                 Ok(bid_traces) => {
-                                    bid_manager.add_bids(bid_traces).await;
+                                    if !bid_traces.is_empty() {
+                                        bid_manager_arc.add_bids(bid_traces).await;
+                                    }
                                 }
                                 Err(e) => {
-                                    error!(client_url = %client.get_url(), block = %block_num, error = %e, "Error fetching bids from relay");
+                                    error!(client_url = %client_guard.get_url(), slot_or_block = %current_slot_or_block, error = %e, "Error fetching builder bids from relay");
+                                }
+                            }
+
+                            // Fetch Delivered Payloads
+                            // Assuming slot_or_block_num can be used as slot here.
+                            // If relays require a different parameter or logic, this needs adjustment.
+                            match client_guard.get_delivered_payloads(current_slot_or_block).await {
+                                Ok(payload_traces) => {
+                                    if !payload_traces.is_empty() {
+                                        delivered_payload_manager_arc.add_payloads(payload_traces).await;
+                                    }
+                                }
+                                Err(e) => {
+                                    error!(client_url = %client_guard.get_url(), slot = %current_slot_or_block, error = %e, "Error fetching delivered payloads from relay");
                                 }
                             }
                         });
-
                         handles.push(handle);
                     }
 
                     for handle in handles {
                         if let Err(e) = handle.await {
-                            error!(error = ?e, "Error joining relay client task");
+                            error!(error = ?e, "Error joining relay client polling task");
                         }
                     }
                 }
@@ -94,4 +134,16 @@ impl RelayClients {
         }
         Ok(())
     }
-}
+
+    pub async fn get_client_metrics(&self) -> Vec<(String, u32, u32)> {
+        let mut metrics = Vec::new();
+        for client_mutex in &self.clients {
+            let client = client_mutex.lock().await; // Acquire mutex lock
+            let url = client.get_url().to_string();
+            let success_count = client.get_success_count();
+            let failed_requests = client.get_failed_requests();
+            metrics.push((url, success_count, failed_requests));
+        }
+        metrics
+    } // Closes `get_client_metrics`
+} // Closes `impl RelayClients`

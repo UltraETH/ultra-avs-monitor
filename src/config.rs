@@ -92,6 +92,9 @@ pub struct PollingConfig {
 
     #[serde(default = "default_rpc_url")]
     pub ethereum_rpc_url: String,
+
+    #[serde(default = "default_block_retention_blocks")]
+    pub block_retention_blocks: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -116,6 +119,18 @@ pub struct OutputConfig {
 
     #[serde(default = "default_metrics_host")]
     pub metrics_host: String,
+
+    #[serde(default = "default_sqlite_output_enabled")]
+    pub sqlite_output_enabled: bool,
+
+    #[serde(default = "default_sqlite_database_path")]
+    pub sqlite_database_path: String,
+
+    #[serde(default = "default_sqlite_flush_interval_secs")]
+    pub sqlite_flush_interval_secs: u64,
+
+    #[serde(default = "default_sqlite_batch_size")]
+    pub sqlite_batch_size: usize,
 }
 
 impl Default for OutputConfig {
@@ -128,6 +143,10 @@ impl Default for OutputConfig {
             metrics_enabled: default_metrics_enabled(),
             metrics_port: default_metrics_port(),
             metrics_host: default_metrics_host(),
+            sqlite_output_enabled: default_sqlite_output_enabled(),
+            sqlite_database_path: default_sqlite_database_path(),
+            sqlite_flush_interval_secs: default_sqlite_flush_interval_secs(),
+            sqlite_batch_size: default_sqlite_batch_size(),
         }
     }
 }
@@ -138,6 +157,7 @@ impl Default for PollingConfig {
             interval: default_poll_interval(),
             duration: default_poll_duration(),
             ethereum_rpc_url: default_rpc_url(),
+            block_retention_blocks: default_block_retention_blocks(),
         }
     }
 }
@@ -178,6 +198,10 @@ fn default_rpc_url() -> String {
     "https://eth.llamarpc.com".to_string()
 }
 
+fn default_block_retention_blocks() -> u64 {
+    1000
+}
+
 fn default_output_enabled() -> bool {
     true
 }
@@ -206,6 +230,22 @@ fn default_metrics_host() -> String {
     "0.0.0.0".to_string()
 }
 
+fn default_sqlite_output_enabled() -> bool {
+    false // Default to false, can be enabled via config or env var
+}
+
+fn default_sqlite_database_path() -> String {
+    "./data/bids.db".to_string()
+}
+
+fn default_sqlite_flush_interval_secs() -> u64 {
+    5
+}
+
+fn default_sqlite_batch_size() -> usize {
+    100
+}
+
 impl Config {
     pub fn get_websocket_addr(&self) -> SocketAddr {
         SocketAddr::new(self.server.websocket_address, self.server.websocket_port)
@@ -220,11 +260,13 @@ impl Config {
     }
 
     pub fn from_file(path: PathBuf) -> Result<Self> {
-        let config_str = std::fs::read_to_string(path)
-            .map_err(|e| BoostMonitorError::ConfigError(format!("Failed to read config file: {}", e)))?;
+        let config_str = std::fs::read_to_string(path).map_err(|e| {
+            BoostMonitorError::ConfigError(format!("Failed to read config file: {}", e))
+        })?;
 
-        let config: Config = serde_json::from_str(&config_str)
-            .map_err(|e| BoostMonitorError::ConfigError(format!("Failed to parse config: {}", e)))?;
+        let config: Config = serde_json::from_str(&config_str).map_err(|e| {
+            BoostMonitorError::ConfigError(format!("Failed to parse config: {}", e))
+        })?;
 
         Ok(config)
     }
@@ -261,6 +303,16 @@ impl Config {
             if let Ok(port) = metrics_port_str.parse::<u16>() {
                 config.output.metrics_port = port;
             }
+        }
+
+        if let Ok(sqlite_enabled_str) = std::env::var("SQLITE_OUTPUT_ENABLED") {
+            if let Ok(enabled) = sqlite_enabled_str.parse::<bool>() {
+                config.output.sqlite_output_enabled = enabled;
+            }
+        }
+
+        if let Ok(sqlite_path) = std::env::var("SQLITE_DATABASE_PATH") {
+            config.output.sqlite_database_path = sqlite_path;
         }
 
         Ok(config)

@@ -3,6 +3,8 @@
 cache/
 artifacts/
 tmp/
+*.db
+*.jsonl
 
 logs
 *.log

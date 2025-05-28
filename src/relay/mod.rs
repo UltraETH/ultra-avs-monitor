@@ -1,12 +1,18 @@
-use crate::types::BidTrace;
 use crate::errors::Result;
+use crate::types::BidTrace;
 use alloy_primitives::U64;
 use async_trait::async_trait;
 
+use crate::types::DeliveredPayloadTrace;
+
 #[async_trait]
 pub trait RelayService: Send + Sync {
-    async fn get_builder_bids(&self, block_num: U64) -> Result<Vec<BidTrace>>;
+    async fn get_builder_bids(&mut self, block_num: U64) -> Result<Vec<BidTrace>>;
+    async fn get_delivered_payloads(&mut self, slot: U64) -> Result<Vec<DeliveredPayloadTrace>>;
     fn get_url(&self) -> &str;
+    fn get_success_count(&self) -> u32; // Added for metrics
+    fn get_failed_requests(&self) -> u32; // Added for metrics
+    fn is_circuit_open(&self) -> bool; // Added for circuit breaker check
 }
 
 pub mod client;

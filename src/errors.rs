@@ -1,5 +1,5 @@
-use thiserror::Error;
 use std::time::Duration;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum BoostMonitorError {
@@ -41,6 +41,9 @@ pub enum BoostMonitorError {
 
     #[error("Alloy Provider error: {0}")]
     AlloyProviderError(String),
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }
 
 pub type Result<T> = std::result::Result<T, BoostMonitorError>;

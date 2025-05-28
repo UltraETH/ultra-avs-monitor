@@ -1,5 +1,7 @@
 pub mod bid_manager;
 pub mod config;
+pub mod database;
+pub mod delivered_payload_manager;
 pub mod errors;
 pub mod file_writer;
 pub mod relay;
@@ -8,4 +10,5 @@ pub mod relay_clients;
 pub mod relay_wrapper;
 pub mod test_helpers;
 pub mod types;
+pub mod utils;
 pub mod websocket;
