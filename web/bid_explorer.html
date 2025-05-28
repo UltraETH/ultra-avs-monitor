@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AVS Boost Monitor - Bid Explorer</title>
+    <title>DuckDB Bid Explorer</title>
+    <!-- DuckDB-Wasm CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.1-dev132.0/dist/duckdb-browser-eh.worker.min.js"></script>
+    <!-- Plotly.js CDN (version 3) -->
+<script src="https://cdn.jsdelivr.net/npm/plotly.js@3.0.1/dist/plotly.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -12,281 +16,346 @@
             color: #333;
         }
         h1 {
-            text-align: center;
-            color: #2c3e50;
+            color: #0056b3;
         }
-        .container {
+        #controls {
             background-color: #fff;
             padding: 20px;
             border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-        .controls {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             margin-bottom: 20px;
-            padding: 15px;
+        }
+        #dbFileInput {
+            margin-bottom: 15px;
+            padding: 8px;
             border: 1px solid #ddd;
-            border-radius: 5px;
-            background-color: #f9f9f9;
+            border-radius: 4px;
         }
-        .controls label {
-            font-weight: bold;
-            margin-right: 10px;
+        #sqlQueryInput {
+            width: calc(100% - 20px);
+            height: 120px;
+            margin-bottom: 15px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: vertical;
         }
-        .controls input[type="file"] {
-            margin-right: 10px;
-        }
-        .controls button {
-            padding: 10px 15px;
-            background-color: #3498db;
+        #executeQueryButton {
+            padding: 10px 20px;
+            background-color: #007bff;
             color: white;
             border: none;
-            border-radius: 4px;
+            border-radius: 5px;
             cursor: pointer;
             font-size: 16px;
+            transition: background-color 0.3s ease;
         }
-        .controls button:hover {
-            background-color: #2980b9;
+        #executeQueryButton:hover {
+            background-color: #0056b3;
         }
-        .query-section {
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #eee;
+        #resultsContainer {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-top: 20px;
+            overflow-x: auto; /* For wide tables */
         }
-        .query-section:last-child {
-            border-bottom: none;
-        }
-        .query-section h2 {
-            color: #3498db;
-            border-bottom: 2px solid #3498db;
-            padding-bottom: 5px;
-            margin-bottom: 15px;
-        }
-        table {
+        #resultsContainer table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 10px;
+            margin-top: 15px;
         }
-        th, td {
+        #resultsContainer th, #resultsContainer td {
             border: 1px solid #ddd;
-            padding: 10px;
+            padding: 8px;
             text-align: left;
         }
-        th {
-            background-color: #ecf0f1;
-            color: #2c3e50;
-            font-weight: bold;
-        }
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        .status {
-            margin-top: 10px;
-            font-style: italic;
-            color: #7f8c8d;
+        #resultsContainer th {
+            background-color: #f2f2f2;
         }
         .error {
-            color: #c0392b;
+            color: red;
             font-weight: bold;
+            margin-top: 10px;
         }
-        .loader {
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #3498db;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 10px auto;
-            display: none; /* Hidden by default */
+        .loading {
+            color: #007bff;
+            font-style: italic;
+            margin-top: 10px;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .plotly-graph-div {
+            margin-top: 20px;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>AVS Boost Monitor - Bid Explorer</h1>
+    <h1>DuckDB Bid Explorer</h1>
 
-        <div class="controls">
-            <label for="dbFile">Select SQLite Database File:</label>
-            <input type="file" id="dbFile" accept=".db,.sqlite,.sqlite3">
-            <button id="loadDbButton">Load Database & Run Queries</button>
-            <div id="statusMessage" class="status"></div>
-            <div id="loader" class="loader"></div>
-        </div>
-
-        <div id="queryResults">
-            <!-- Query results will be injected here by JavaScript -->
-        </div>
+    <div id="controls">
+        <p>Upload your `bids_sqlite_only.db` file:</p>
+        <input type="file" id="dbFileInput" accept=".db,.sqlite,.sqlite3">
+        <p>Select a predefined query:</p>
+        <select id="predefinedQuerySelect">
+            <option value="">-- Select a query --</option>
+            <option value="SELECT strftime('%Y-%m-%d %H:00:00', timestamp) AS hour, COUNT(id) AS total_bids FROM bids_data GROUP BY hour ORDER BY hour;">1. Total Bids Over Time</option>
+            <option value="SELECT strftime('%Y-%m-%d %H:00:00', timestamp) AS hour, AVG(bid_value) AS average_bid_value FROM bids_data GROUP BY hour ORDER BY hour;">2. Average Bid Value Over Time</option>
+            <option value="SELECT builder_id, SUM(bid_value) AS total_bid_value FROM bids_data GROUP BY builder_id ORDER BY total_bid_value DESC LIMIT 10;">3. Top 10 Builders by Total Bid Value</option>
+            <option value="SELECT status, COUNT(id) AS count FROM bids_data GROUP BY status;">4. Bid Status Distribution</option>
+            <option value="SELECT r.name AS relay_name, COUNT(b.id) AS total_bids FROM bids_data b JOIN sqlite_scan('bids_sqlite_only.db').relays r ON b.relay_id = r.id GROUP BY r.name ORDER BY total_bids DESC;">5. Bids per Relay</option>
+            <option value="SELECT block_number, AVG(gas_used) AS average_gas_used FROM bids_data GROUP BY block_number ORDER BY block_number;">6. Average Gas Used per Block Number</option>
+            <option value="SELECT FLOOR(payload_size / 1000) * 1000 AS payload_size_bin, COUNT(id) AS count FROM sqlite_scan('bids_sqlite_only.db').payloads GROUP BY payload_size_bin ORDER BY payload_size_bin;">7. Payload Size Distribution</option>
+            <option value="SELECT transaction_count, COUNT(id) AS count FROM sqlite_scan('bids_sqlite_only.db').payloads GROUP BY transaction_count ORDER BY transaction_count;">8. Transaction Count Distribution in Payloads</option>
+            <option value="SELECT bid_value, gas_used FROM bids_data WHERE bid_value IS NOT NULL AND gas_used IS NOT NULL;">9. Correlation between Bid Value and Gas Used</option>
+            <option value="SELECT CAST(timestamp AS DATE) AS bid_date, COUNT(id) AS daily_bids FROM bids_data GROUP BY bid_date ORDER BY bid_date;">10. Daily Bid Volume</option>
+            <option value="SELECT strftime('%H:00', timestamp) AS hour_of_day, COUNT(id) AS hourly_bids FROM bids_data WHERE CAST(timestamp AS DATE) = '2025-05-28' GROUP BY hour_of_day ORDER BY hour_of_day;">11. Hourly Bid Volume for a Specific Day (Example: 2025-05-28)</option>
+            <option value="SELECT r.name AS relay_name, AVG(p.execution_time_ms) AS average_execution_time FROM bids_data b JOIN sqlite_scan('bids_sqlite_only.db').payloads p ON b.id = p.bid_id JOIN sqlite_scan('bids_sqlite_only.db').relays r ON b.relay_id = r.id GROUP BY r.name ORDER BY average_execution_time DESC;">12. Average Execution Time per Relay</option>
+            <option value="SELECT strftime('%Y-%m-%d', timestamp) AS day, COUNT(DISTINCT builder_id) AS unique_builders FROM bids_data GROUP BY day ORDER BY day;">13. Number of Unique Builders Over Time</option>
+            <option value="SELECT r.name AS relay_name, MIN(b.bid_value) AS min_bid_value, MAX(b.bid_value) AS max_bid_value, AVG(b.bid_value) AS avg_bid_value FROM bids_data b JOIN sqlite_scan('bids_sqlite_only.db').relays r ON b.relay_id = r.id GROUP BY r.name;">14. Min, Max, Avg Bid Value per Relay</option>
+            <option value="SELECT CASE WHEN gas_limit < 10000000 THEN '0-10M' WHEN gas_limit >= 10000000 AND gas_limit < 20000000 THEN '10M-20M' ELSE '20M+' END AS gas_limit_range, COUNT(id) AS count FROM bids_data GROUP BY gas_limit_range ORDER BY gas_limit_range;">15. Bids by Gas Limit Range</option>
+            <option value="SELECT id, bid_id, transaction_count, payload_size FROM sqlite_scan('bids_sqlite_only.db').payloads ORDER BY transaction_count DESC LIMIT 5;">16. Top 5 Payloads by Transaction Count</option>
+            <option value="SELECT id, timestamp, bid_value, builder_id FROM bids_data WHERE status = 'rejected' ORDER BY timestamp DESC;">17. Bids with Status 'rejected' and their Builder</option>
+            <option value="SELECT block_number, SUM(bid_value) AS total_bid_value FROM bids_data GROUP BY block_number ORDER BY block_number;">18. Total Bid Value per Block Number</option>
+            <option value="SELECT strftime('%H:00', b.timestamp) AS hour_of_day, AVG(p.execution_time_ms) AS avg_execution_time FROM bids_data b JOIN sqlite_scan('bids_sqlite_only.db').payloads p ON b.id = p.bid_id GROUP BY hour_of_day ORDER BY hour_of_day;">19. Average Payload Execution Time by Hour of Day</option>
+            <option value="SELECT r.location, COUNT(b.id) AS total_bids FROM bids_data b JOIN sqlite_scan('bids_sqlite_only.db').relays r ON b.relay_id = r.id GROUP BY r.location ORDER BY total_bids DESC;">20. Count of Bids per Relay Location</option>
+        </select>
+        <p>Or enter your custom SQL query:</p>
+        <textarea id="sqlQueryInput" placeholder="e.g., SELECT * FROM bids_data LIMIT 10;"></textarea>
+        <button id="executeQueryButton">Execute Query</button>
+        <div id="statusMessage"></div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+    <div id="resultsContainer">
+        <h2>Query Results</h2>
+        <div id="plotDiv" style="width:100%; height:400px;"></div>
+        <div id="tableResults"></div>
+    </div>
+
     <script>
-        const queries = [
-            {
-                id: "totalBids",
-                title: "1. Total Bids Recorded",
-                sql: "SELECT COUNT(*) AS total_bids FROM bid_traces;"
+        const DUCKDB_BUNDLES = {
+            mvp: {
+                mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-mvp.wasm',
+                mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-mvp.worker.js',
             },
-            {
-                id: "recentBids",
-                title: "2. 5 Most Recent Bids (by received_at)",
-                sql: "SELECT block_number, value, builder_pubkey, received_at FROM bid_traces ORDER BY received_at DESC LIMIT 5;"
+            eh: {
+                mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-eh.wasm',
+                mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-eh.worker.js',
             },
-            {
-                id: "highestValueBids",
-                title: "3. 5 Highest Value Bids",
-                sql: "SELECT block_number, value, builder_pubkey, slot FROM bid_traces ORDER BY CAST(value AS INTEGER) DESC LIMIT 5;"
+            shell: {
+                mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-shell.wasm',
+                mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-shell.worker.js',
             },
-            {
-                id: "bidsPerBuilder",
-                title: "4. Bid Count per Builder (Top 5)",
-                sql: "SELECT builder_pubkey, COUNT(*) as bid_count FROM bid_traces GROUP BY builder_pubkey ORDER BY bid_count DESC LIMIT 5;"
-            },
-            {
-                id: "avgBidValuePerBuilder",
-                title: "5. Average Bid Value per Builder (Top 5 by Avg Value)",
-                sql: "SELECT builder_pubkey, AVG(CAST(value AS INTEGER)) as avg_value FROM bid_traces GROUP BY builder_pubkey ORDER BY avg_value DESC LIMIT 5;"
-            },
-            {
-                id: "bidsForSpecificBlock",
-                title: "6. Bids for a Specific Block (Example: Block '123456')",
-                sql: "SELECT slot, value, builder_pubkey FROM bid_traces WHERE block_number = '123456';"
-            },
-            {
-                id: "uniqueBlocksWithBids",
-                title: "7. Number of Unique Blocks with Bids",
-                sql: "SELECT COUNT(DISTINCT block_number) AS unique_block_count FROM bid_traces;"
-            },
-            {
-                id: "bidsLastHour",
-                title: "8. Bids Received in the Last Hour",
-                sql: "SELECT block_number, value, builder_pubkey, received_at FROM bid_traces WHERE received_at >= datetime('now', '-1 hour') ORDER BY received_at DESC LIMIT 10;"
-            },
-            {
-                id: "bidsOver1Eth",
-                title: "9. Bids with Value > 1 ETH (1000000000000000000 Wei)",
-                sql: "SELECT block_number, value, builder_pubkey FROM bid_traces WHERE CAST(value AS INTEGER) > 1000000000000000000 ORDER BY CAST(value AS INTEGER) DESC LIMIT 5;"
-            },
-            {
-                id: "uniqueBuilders",
-                title: "10. List Unique Builder Public Keys (Top 10)",
-                sql: "SELECT DISTINCT builder_pubkey FROM bid_traces ORDER BY builder_pubkey LIMIT 10;"
+        };
+
+        let db;
+        let conn;
+        const dbFileInput = document.getElementById('dbFileInput');
+        const sqlQueryInput = document.getElementById('sqlQueryInput');
+        const executeQueryButton = document.getElementById('executeQueryButton');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const plotDiv = document.getElementById('plotDiv');
+        const tableResults = document.getElementById('tableResults');
+        const statusMessage = document.getElementById('statusMessage');
+
+        async function initializeDuckDB() {
+            statusMessage.textContent = 'Initializing DuckDB...';
+            try {
+                const bundle = DUCKDB_BUNDLES.mvp;
+                const worker = new Worker(bundle.mainWorker);
+                db = new duckdb.AsyncDuckDB(worker);
+                await db.instantiate(bundle.mainModule);
+                conn = await db.connect();
+                statusMessage.textContent = 'DuckDB initialized. Please upload your database file.';
+                executeQueryButton.disabled = true; // Disable until DB is loaded
+            } catch (e) {
+                statusMessage.textContent = `Error initializing DuckDB: ${e.message}`;
+                console.error('DuckDB initialization error:', e);
             }
-        ];
+        }
 
-        const dbFileElement = document.getElementById('dbFile');
-        const loadDbButton = document.getElementById('loadDbButton');
-        const statusMessageElement = document.getElementById('statusMessage');
-        const queryResultsContainer = document.getElementById('queryResults');
-        const loaderElement = document.getElementById('loader');
+        async function loadDatabaseFile(file) {
+            statusMessage.textContent = `Loading ${file.name}... This may take a moment.`;
+            try {
+                const buffer = await file.arrayBuffer();
+                await db.registerFileBuffer(file.name, new Uint8Array(buffer));
+                // Assuming the main table is 'bids' or similar, and we want to query it via a view
+                // The user specified 'bids_sqlite_only.db', so we'll use that as the file name
+                await conn.query(`CREATE OR REPLACE VIEW bids_data AS SELECT * FROM sqlite_scan('${file.name}');`);
+                statusMessage.textContent = `Database "${file.name}" loaded and view 'bids_data' created. Ready to query.`;
+                executeQueryButton.disabled = false;
+            } catch (e) {
+                statusMessage.textContent = `Error loading database: ${e.message}`;
+                console.error('Database loading error:', e);
+            }
+        }
 
-        let db = null;
+        async function executeQuery() {
+            const query = sqlQueryInput.value.trim();
+            if (!query) {
+                statusMessage.textContent = 'Please enter a SQL query.';
+                return;
+            }
 
-        async function loadDatabase(file) {
-            statusMessageElement.textContent = 'Loading database...';
-            loaderElement.style.display = 'block';
-            queryResultsContainer.innerHTML = ''; // Clear previous results
+            statusMessage.textContent = 'Executing query...';
+            tableResults.innerHTML = ''; // Clear previous table results
+            Plotly.purge(plotDiv); // Clear previous plot
 
             try {
-                const SQL = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}` });
-                const fileBuffer = await file.arrayBuffer();
-                db = new SQL.Database(new Uint8Array(fileBuffer));
-                statusMessageElement.textContent = `Database '${file.name}' loaded successfully. Running queries...`;
-                runAllQueries();
-            } catch (error) {
-                console.error('Error loading database:', error);
-                statusMessageElement.innerHTML = `<span class="error">Error loading database: ${error.message}</span>`;
-                db = null;
-            } finally {
-                loaderElement.style.display = 'none';
-            }
-        }
+                const result = await conn.query(query);
+                const data = result.toArray().map(row => row.toJSON()); // Convert to array of plain objects
 
-        function runAllQueries() {
-            if (!db) {
-                statusMessageElement.innerHTML = '<span class="error">No database loaded. Please select a file.</span>';
-                return;
-            }
-
-            queries.forEach(queryInfo => {
-                const sectionDiv = document.createElement('div');
-                sectionDiv.className = 'query-section';
-                sectionDiv.id = `query-${queryInfo.id}`;
-
-                const titleElement = document.createElement('h2');
-                titleElement.textContent = queryInfo.title;
-                sectionDiv.appendChild(titleElement);
-
-                const resultDiv = document.createElement('div');
-                resultDiv.id = `result-${queryInfo.id}`;
-                sectionDiv.appendChild(resultDiv);
-
-                queryResultsContainer.appendChild(sectionDiv);
-
-                try {
-                    const results = db.exec(queryInfo.sql);
-                    renderResults(resultDiv, results);
-                } catch (error) {
-                    console.error(`Error executing query "${queryInfo.title}":`, error);
-                    resultDiv.innerHTML = `<p class="error">Error executing query: ${error.message}</p>`;
+                if (data.length === 0) {
+                    statusMessage.textContent = 'Query executed successfully, but no results found.';
+                    return;
                 }
-            });
-            statusMessageElement.textContent = 'All queries executed.';
+
+                displayTable(data);
+                attemptPlot(data);
+                statusMessage.textContent = 'Query executed successfully.';
+
+            } catch (e) {
+                statusMessage.textContent = `Error executing query: ${e.message}`;
+                console.error('Query execution error:', e);
+            }
         }
 
-        function renderResults(element, results) {
-            if (!results || results.length === 0) {
-                element.innerHTML = '<p>No results found for this query.</p>';
-                return;
-            }
-
-            // sql.js returns an array of result objects. We usually care about the first one.
-            const firstResult = results[0];
-            if (!firstResult || !firstResult.columns || !firstResult.values) {
-                 element.innerHTML = '<p>Query executed, but no data returned in expected format.</p>';
+        function displayTable(data) {
+            if (data.length === 0) {
+                tableResults.innerHTML = '<p>No tabular data to display.</p>';
                 return;
             }
 
             const table = document.createElement('table');
             const thead = document.createElement('thead');
             const tbody = document.createElement('tbody');
-            const headerRow = document.createElement('tr');
 
-            firstResult.columns.forEach(colName => {
+            // Create table header
+            const headers = Object.keys(data[0]);
+            const headerRow = document.createElement('tr');
+            headers.forEach(headerText => {
                 const th = document.createElement('th');
-                th.textContent = colName;
+                th.textContent = headerText;
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
             table.appendChild(thead);
 
-            firstResult.values.forEach(rowData => {
-                const tr = document.createElement('tr');
-                rowData.forEach(cellData => {
+            // Create table body
+            data.forEach(rowData => {
+                const row = document.createElement('tr');
+                headers.forEach(header => {
                     const td = document.createElement('td');
-                    td.textContent = cellData === null ? 'NULL' : cellData;
-                    tr.appendChild(td);
+                    td.textContent = rowData[header];
+                    row.appendChild(td);
                 });
-                tbody.appendChild(tr);
+                tbody.appendChild(row);
             });
             table.appendChild(tbody);
-            element.appendChild(table);
+            tableResults.appendChild(table);
         }
 
-        loadDbButton.addEventListener('click', () => {
-            const file = dbFileElement.files[0];
+        function attemptPlot(data) {
+            if (data.length === 0) {
+                return;
+            }
+
+            const headers = Object.keys(data[0]);
+            if (headers.length < 2) {
+                // Need at least two columns for most meaningful plots
+                return;
+            }
+
+            // Simple heuristic for plotting:
+            // If two columns, try scatter or line.
+            // If one categorical and one numeric, try bar or pie.
+            // This is a basic example and can be expanded.
+
+            const firstCol = headers[0];
+            const secondCol = headers[1];
+
+            const xValues = data.map(row => row[firstCol]);
+            const yValues = data.map(row => row[secondCol]);
+
+            let plotType = 'scatter'; // Default to scatter
+            let layoutTitle = 'Query Results Plot';
+
+            // Check if the first column looks like a timestamp or category for line/bar charts
+            const isFirstColTemporal = xValues.every(val => !isNaN(new Date(val).getTime()) && val.includes('-'));
+            const isFirstColCategorical = xValues.every(val => typeof val === 'string' || typeof val === 'number') && new Set(xValues).size <= 20; // Heuristic for categories
+
+            // Check if the second column is numeric
+            const isSecondColNumeric = yValues.every(val => typeof val === 'number' || (typeof val === 'string' && !isNaN(parseFloat(val))));
+
+            if (isFirstColTemporal && isSecondColNumeric) {
+                plotType = 'scatter'; // Plotly handles dates well for scatter/line
+                layoutTitle = `${secondCol} Over ${firstCol}`;
+            } else if (isFirstColCategorical && isSecondColNumeric) {
+                plotType = 'bar';
+                layoutTitle = `${secondCol} by ${firstCol}`;
+            } else if (headers.length === 2 && isSecondColNumeric) {
+                // Fallback for two columns, second is numeric
+                plotType = 'scatter';
+                layoutTitle = `${secondCol} vs ${firstCol}`;
+            } else if (headers.length === 2 && new Set(xValues).size === 1 && isSecondColNumeric) {
+                // If first column is constant, and second is numeric, maybe a single value or simple bar
+                plotType = 'bar';
+                layoutTitle = `${secondCol}`;
+            } else if (headers.length === 2 && isFirstColCategorical && yValues.every(val => typeof val === 'number' && val >= 0)) {
+                // If first column is categorical and second is positive numeric, could be pie chart
+                // This is a very specific heuristic for pie charts (e.g., status counts)
+                if (new Set(xValues).size <= 10) { // Limit pie slices
+                    plotType = 'pie';
+                    layoutTitle = `Distribution of ${firstCol}`;
+                }
+            }
+
+
+            const trace = {
+                x: xValues,
+                y: yValues,
+                type: plotType,
+                mode: 'lines+markers', // For scatter/line
+                name: 'Data'
+            };
+
+            if (plotType === 'pie') {
+                trace.labels = xValues;
+                trace.values = yValues;
+                delete trace.x;
+                delete trace.y;
+            }
+
+            const layout = {
+                title: layoutTitle,
+                xaxis: { title: firstCol },
+                yaxis: { title: secondCol },
+                height: 400,
+                margin: { t: 50, b: 50, l: 50, r: 50 }
+            };
+
+            Plotly.newPlot(plotDiv, [trace], layout);
+        }
+
+        const predefinedQuerySelect = document.getElementById('predefinedQuerySelect');
+
+        // Event Listeners
+        dbFileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
             if (file) {
-                loadDatabase(file);
-            } else {
-                statusMessageElement.innerHTML = '<span class="error">Please select a database file first.</span>';
+                loadDatabaseFile(file);
             }
         });
 
-        // Initial message
-        statusMessageElement.textContent = 'Select a SQLite database file and click "Load Database & Run Queries".';
+        predefinedQuerySelect.addEventListener('change', (event) => {
+            sqlQueryInput.value = event.target.value;
+        });
 
+        executeQueryButton.addEventListener('click', executeQuery);
+
+        // Initialize DuckDB when the page loads
+        initializeDuckDB();
     </script>
 </body>
 </html>

@@ -2,9 +2,8 @@ use crate::bid_manager::BidManager;
 use crate::errors::Result;
 use std::sync::Arc;
 
-#[cfg(test)]
+// Imports made public for use in integration tests
 use crate::types::BidTrace;
-#[cfg(test)]
 use alloy_primitives::{Address, U256};
 
 pub struct TestServer {
@@ -28,7 +27,7 @@ impl TestServer {
     }
 }
 
-#[cfg(test)]
+// Function made public for use in integration tests
 pub fn create_test_bid_trace(slot: u64, value: u64) -> BidTrace {
     BidTrace {
         slot: U256::from(slot),

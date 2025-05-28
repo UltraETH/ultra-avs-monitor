@@ -1,10 +1,10 @@
 use std::sync::Arc;
-use tokio::sync::mpsc;
+// use tokio::sync::mpsc; // Unused
 use tracing::{debug, error, info};
 
 use crate::{
     database::sqlite_writer::SqliteWriter,
-    errors::Result,
+    // errors::Result, // Unused
     file_writer::FileWriter, // Optional: if we also write delivered payloads to a file
     types::DeliveredPayloadTrace,
 };

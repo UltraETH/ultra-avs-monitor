@@ -4,13 +4,13 @@ use std::{
 };
 
 use alloy_primitives::{Address, U256};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize}; // Removed Serializer
 
 use crate::utils::serde_helpers::deserialize_u256_from_string;
 
 mod address_serde {
     use super::*;
-    use serde::{Deserializer, Serialize, Serializer};
+    use serde::{Deserializer, Serializer}; // Removed Serialize from here as it's not used locally
     use std::str::FromStr;
 
     pub fn serialize<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>

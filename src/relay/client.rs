@@ -15,7 +15,7 @@ const CIRCUIT_BREAKER_COOL_DOWN: Duration = Duration::from_secs(30);
 
 pub struct RelayClient {
     base_url: String,
-    url: String,
+    // url: String, // Unused field
     client: Client,
     request_timeout: Duration,
     failed_requests: u32,
@@ -29,10 +29,10 @@ impl RelayClient {
         let base_url = config.url.clone();
         Self {
             base_url,
-            url: format!(
-                "{}/relay/v1/data/bidtraces/builder_blocks_received",
-                config.url
-            ),
+            // url: format!( // This was for the unused field
+            //     "{}/relay/v1/data/bidtraces/builder_blocks_received",
+            //     config.url
+            // ),
             client: Client::new(),
             request_timeout: config.request_timeout,
             failed_requests: 0,
@@ -43,13 +43,13 @@ impl RelayClient {
     }
 
     pub fn new_with_url(base_url: String, request_timeout: Duration) -> Self {
-        let full_url = format!(
-            "{}/relay/v1/data/bidtraces/builder_blocks_received",
-            base_url
-        );
+        // let full_url = format!( // This was for the unused field
+        //     "{}/relay/v1/data/bidtraces/builder_blocks_received",
+        //     base_url
+        // );
         Self {
             base_url,
-            url: full_url,
+            // url: full_url, // Unused field
             client: Client::new(),
             request_timeout,
             failed_requests: 0,
@@ -263,147 +263,6 @@ impl RelayService for RelayClient {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::RelayConfig;
-    use std::time::Duration;
-
-    #[tokio::test]
-    async fn test_circuit_breaker() {
-        let config = RelayConfig {
-            url: "https://example.com".to_string(),
-            request_timeout: Duration::from_millis(100),
-            circuit_breaker_threshold: 2,
-        };
-
-        let mut client = RelayClient::new(config);
-
-        assert!(!client.is_circuit_open());
-
-        client.failed_requests = 1;
-        assert!(!client.is_circuit_open());
-
-        client.failed_requests = 2; // Circuit is now tripped
-        assert!(client.is_circuit_tripped());
-        // Immediately after tripping, it's in cool-down, so is_circuit_open() should be true
-        assert!(client.is_circuit_open(), "Circuit should be open (tripped and in cool-down)");
-
-        // Wait for cool-down to pass
-        tokio::time::sleep(CIRCUIT_BREAKER_COOL_DOWN + Duration::from_secs(1)).await;
-
-        // After cool-down, is_circuit_tripped() is still true, but is_circuit_open() should be false (half-open state)
-        assert!(client.is_circuit_tripped(), "Circuit should still be tripped after cool-down");
-        assert!(!client.is_circuit_open(), "Circuit should NOT be open after cool-down (half-open state, ready for test request)");
-
-        // Simulate a successful request to reset the circuit
-        client.record_success();
-        assert!(!client.is_circuit_tripped(), "Circuit should not be tripped after success");
-        assert!(!client.is_circuit_open(), "Circuit should not be open after success");
-    }
-}
-            && self.last_attempt_time.elapsed() <= CIRCUIT_BREAKER_COOL_DOWN
-        {
-            debug!(url = %self.base_url, "Circuit breaker open, skipping request");
-            return Err(BoostMonitorError::RelayConnectionError(
-                "Circuit breaker open, skipping request".to_string(),
-            ));
-        }
-
-        let request_url = format!("{}?block_number={}", &self.url, block_num);
-
-        for attempt in 1..=MAX_RETRIES {
-            debug!(url = %self.base_url, block = %block_num, attempt = attempt, "Attempting to fetch bids");
-            self.last_attempt_time = Instant::now(); // Update last attempt time before each try
-
-            let response_result = timeout(
-                self.request_timeout,
-                self.client
-                    .get(&request_url)
-                    .header("accept", "application/json")
-                    .send(),
-            )
-            .await;
-
-            match response_result {
-                Ok(Ok(response)) => {
-                    if response.status().is_success() {
-                        match response.json::<Vec<BidTrace>>().await {
-                            Ok(data) => {
-                                self.record_success();
-                                return Ok(data);
-                            }
-                            Err(e) => {
-                                error!(url = %self.base_url, block = %block_num, error = %e, "Failed to parse JSON response");
-                                self.record_failure();
-                                if attempt == MAX_RETRIES {
-                                    return Err(BoostMonitorError::InvalidResponseError(format!(
-                                        "Failed to parse JSON response after {} attempts: {}",
-                                        MAX_RETRIES, e
-                                    )));
-                                }
-                            }
-                        }
-                    } else {
-                        let status = response.status();
-                        let body = response.text().await.unwrap_or_else(|_| "N/A".to_string());
-                        error!(url = %self.base_url, block = %block_num, status = %status, body = %body, "Relay returned non-success status");
-                        self.record_failure();
-                        if attempt == MAX_RETRIES {
-                            return Err(BoostMonitorError::RelayConnectionError(format!(
-                                "Relay returned status {} after {} attempts: {}",
-                                status, MAX_RETRIES, body
-                            )));
-                        }
-                    }
-                }
-                Ok(Err(e)) => {
-                    error!(url = %self.base_url, block = %block_num, error = %e, "Relay request failed");
-                    self.record_failure();
-                    if attempt == MAX_RETRIES {
-                        return Err(BoostMonitorError::RequestError(e));
-                    }
-                }
-                Err(_) => {
-                    error!(url = %self.base_url, block = %block_num, timeout = ?self.request_timeout, "Relay request timed out");
-                    self.record_failure();
-                    if attempt == MAX_RETRIES {
-                        return Err(BoostMonitorError::TimeoutError(self.request_timeout));
-                    }
-                }
-            }
-
-            // Wait before retrying
-            if attempt < MAX_RETRIES {
-                sleep(RETRY_DELAY).await;
-            }
-        }
-
-        // Should not be reached if MAX_RETRIES > 0
-        unreachable!();
-
-
-    fn get_success_count(&self) -> u32 {
-        self.success_count
-    }
-
-    fn get_failed_requests(&self) -> u32 {
-        self.failed_requests
-    }
-
-    // This now calls the renamed is_circuit_tripped method.
-    // The actual decision to skip a request due to cool-down is in get_builder_bids.
-    fn is_circuit_open(&self) -> bool {
-        if self.is_circuit_tripped() {
-            // If tripped, check if we are still in cool-down.
-            // If not in cool-down, the circuit is effectively "half-open" or ready for a test request.
-            // The get_builder_bids method will allow one attempt if cool-down has passed.
-            self.last_attempt_time.elapsed() <= CIRCUIT_BREAKER_COOL_DOWN
-        } else {
-            false // Not tripped, so not open in the sense of preventing requests.
-        }
-    }
 
 #[cfg(test)]
 mod tests {
