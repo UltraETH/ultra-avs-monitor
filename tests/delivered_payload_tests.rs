@@ -92,7 +92,6 @@ mod delivered_payload_tests {
         assert_eq!(count_rows(&pool, "builders").await, 1); // Check builder was created
         assert_eq!(count_rows(&pool, "proposers").await, 1); // Check proposer was created
 
-
         let row = sqlx::query(
             // Querying 'delivered_payloads' and joining with 'blocks' to get block_hash
             "SELECT dp.value, b.block_hash FROM delivered_payloads dp JOIN blocks b ON dp.block_id = b.id WHERE b.block_hash = ?",

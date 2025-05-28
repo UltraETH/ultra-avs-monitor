@@ -1,5 +1,5 @@
 use alloy_primitives::U256;
-use serde::{Deserializer, Deserialize};
+use serde::{Deserialize, Deserializer};
 use std::str::FromStr;
 
 pub fn deserialize_u256_from_string<'de, D>(deserializer: D) -> Result<U256, D::Error>

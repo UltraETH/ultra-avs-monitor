@@ -87,14 +87,18 @@ impl RelayService for RelayClient {
 
     async fn get_builder_bids(&mut self, block_num: U64) -> Result<Vec<BidTrace>> {
         // Check circuit breaker state
-        if self.is_circuit_open() { // Use the trait method which checks tripped and cool-down
+        if self.is_circuit_open() {
+            // Use the trait method which checks tripped and cool-down
             debug!(url = %self.base_url, "Circuit breaker open, skipping get_builder_bids request");
             return Err(BoostMonitorError::RelayConnectionError(
                 "Circuit breaker open, skipping request".to_string(),
             ));
         }
 
-        let request_url = format!("{}/relay/v1/data/bidtraces/builder_blocks_received?block_number={}", &self.base_url, block_num);
+        let request_url = format!(
+            "{}/relay/v1/data/bidtraces/builder_blocks_received?block_number={}",
+            &self.base_url, block_num
+        );
 
         for attempt in 1..=MAX_RETRIES {
             debug!(url = %self.base_url, block = %block_num, attempt = attempt, "Attempting to fetch builder bids");
@@ -172,7 +176,10 @@ impl RelayService for RelayClient {
             ));
         }
 
-        let request_url = format!("{}/relay/v1/data/bidtraces/proposer_payload_delivered?slot={}", &self.base_url, slot);
+        let request_url = format!(
+            "{}/relay/v1/data/bidtraces/proposer_payload_delivered?slot={}",
+            &self.base_url, slot
+        );
 
         for attempt in 1..=MAX_RETRIES {
             debug!(url = %self.base_url, slot = %slot, attempt = attempt, "Attempting to fetch delivered payloads");
@@ -288,18 +295,33 @@ mod tests {
         client.failed_requests = 2; // Circuit is now tripped
         assert!(client.is_circuit_tripped());
         // Immediately after tripping, it's in cool-down, so is_circuit_open() should be true
-        assert!(client.is_circuit_open(), "Circuit should be open (tripped and in cool-down)");
+        assert!(
+            client.is_circuit_open(),
+            "Circuit should be open (tripped and in cool-down)"
+        );
 
         // Wait for cool-down to pass
         tokio::time::sleep(CIRCUIT_BREAKER_COOL_DOWN + Duration::from_secs(1)).await;
 
         // After cool-down, is_circuit_tripped() is still true, but is_circuit_open() should be false (half-open state)
-        assert!(client.is_circuit_tripped(), "Circuit should still be tripped after cool-down");
-        assert!(!client.is_circuit_open(), "Circuit should NOT be open after cool-down (half-open state, ready for test request)");
+        assert!(
+            client.is_circuit_tripped(),
+            "Circuit should still be tripped after cool-down"
+        );
+        assert!(
+            !client.is_circuit_open(),
+            "Circuit should NOT be open after cool-down (half-open state, ready for test request)"
+        );
 
         // Simulate a successful request to reset the circuit
         client.record_success();
-        assert!(!client.is_circuit_tripped(), "Circuit should not be tripped after success");
-        assert!(!client.is_circuit_open(), "Circuit should not be open after success");
+        assert!(
+            !client.is_circuit_tripped(),
+            "Circuit should not be tripped after success"
+        );
+        assert!(
+            !client.is_circuit_open(),
+            "Circuit should not be open after success"
+        );
     }
 }

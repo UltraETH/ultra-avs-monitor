@@ -103,8 +103,8 @@ pub struct DeliveredPayloadTrace {
     pub num_tx: U256,
     #[serde(deserialize_with = "deserialize_u256_from_string")]
     pub timestamp: U256, // Assuming relays provide this, might be part of execution payload header
-    // timestamp_ms might not be present in delivered payloads, check relay specs
-    // pub timestamp_ms: U256,
+                         // timestamp_ms might not be present in delivered payloads, check relay specs
+                         // pub timestamp_ms: U256,
 }
 
 impl fmt::Display for DeliveredPayloadTrace {
